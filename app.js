@@ -2,8 +2,8 @@
 (function () {
   'use strict';
   const K = KhoCore, DB = KhoDB;
-  const APP_VERSION = '1.0.0';
-  let S = null, D = null;
+  const APP_VERSION = '1.1.0';
+  let S = null, D = null, saving = false, lastBtn = null;
 
   /* ================= tiện ích ================= */
   const $ = (s, r) => (r || document).querySelector(s);
@@ -45,7 +45,12 @@
     zoom: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M11 8v6M8 11h6"/>',
     house: '<path d="M3 21V9l9-5 9 5v12"/><path d="M7 21v-8h10v8M7 17h10"/>',
     coin: '<circle cx="12" cy="12" r="9"/><path d="M14.5 9.5c-.4-1-1.4-1.5-2.5-1.5-1.5 0-2.5.8-2.5 2s1 1.7 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.2 0-2.2-.6-2.6-1.6M12 6.5V8m0 8v1.5"/>',
-    phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>'
+    phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
+    cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
+    note: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h3"/>',
+    chevd: '<path d="m6 9 6 6 6-6"/>',
+    minus: '<path d="M5 12h14"/>',
+    sort: '<path d="M7 4v16m0 0-3-3m3 3 3-3M17 20V4m0 0-3 3m3-3 3 3"/>'
   };
   const ic = (n, c) => '<svg class="i ' + (c || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + IC[n] + '</svg>';
   const TYPE_IC = { nhap: 'in', xuat: 'out', nhan_lai: 'ret', chuyen: 'move', kiemke: 'count', hoantac: 'undo' };
@@ -66,6 +71,14 @@
   }
   function timeOf(m) { const d = new Date(m.createdAt); return isNaN(d) ? '' : String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
   function fmtPriceInput(v) { const d = String(v || '').replace(/\D/g, ''); return d ? Number(d).toLocaleString('vi-VN') : ''; }
+  function locShort(it) {
+    const s = D.stock[it.id] || {};
+    const ids = Object.keys(s).filter(k => s[k] > 0);
+    if (ids.length === 1) return L(ids[0]);
+    if (ids.length > 1) return ids.length + ' vị trí';
+    const ev = Object.keys(D.everLocs[it.id] || {});
+    return ev.length === 1 && ev[0] !== K.NONE_LOC ? 'Từng cất: ' + L(ev[0]) : 'Không còn trong kho';
+  }
   function thumb(it, cls) {
     if (it && it.thumb) return '<img class="thumb ' + (cls || '') + '" src="' + it.thumb + '" alt="">';
     const ch = (it && it.name ? it.name.trim()[0] : '?') || '?';
@@ -103,7 +116,11 @@
       if (c.photos[k]) add(put, 'photos', [{ key: k, data: c.photos[k] }]); else add(del, 'photos', [k]);
     }
     const meta = Object.assign({}, S.meta, c.meta || {});
-    await DB.write(put, del, meta);
+    saving = true;
+    const busyBtn = lastBtn && lastBtn.isConnected && lastBtn.closest('.sh-foot') ? lastBtn : null;
+    if (busyBtn) { busyBtn.classList.add('busy'); busyBtn.setAttribute('aria-busy', 'true'); }
+    try { await DB.write(put, del, meta); }
+    finally { saving = false; if (busyBtn) { busyBtn.classList.remove('busy'); busyBtn.removeAttribute('aria-busy'); } }
     S.meta = meta;
     (c.items || []).forEach(x => S.items[x.id] = x);
     (c.locations || []).forEach(x => S.locations[x.id] = x);
@@ -178,11 +195,14 @@
     const bd = document.createElement('div'); bd.className = 'backdrop';
     const el = document.createElement('section'); el.className = 'sheet' + (o.full ? ' full' : '');
     el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', o.title);
-    el.innerHTML = '<div class="sh-head"><h3>' + esc(o.title) + '</h3><button class="x" data-act="close">' + esc(o.closeLabel || 'Đóng') + '</button></div><div class="sh-body"></div>' + (o.foot === false ? '' : '<div class="sh-foot"></div>');
+    const head = o.full
+      ? '<div class="sh-head center"><button class="back" data-act="close" aria-label="Quay lại">' + ic('back') + '</button><h3>' + esc(o.title) + '</h3><span class="sp"></span></div>'
+      : '<div class="sh-head"><h3>' + esc(o.title) + '</h3><button class="x" data-act="close">' + esc(o.closeLabel || 'Đóng') + '</button></div>';
+    el.innerHTML = head + '<div class="sh-body"></div>' + (o.foot === false ? '' : '<div class="sh-foot"></div>');
     $('#layers').append(bd, el);
     const sh = {
       el, body: $('.sh-body', el), foot: $('.sh-foot', el),
-      close() { el.classList.remove('show'); bd.classList.remove('show'); const i = sheets.indexOf(sh); if (i >= 0) sheets.splice(i, 1); setTimeout(() => { el.remove(); bd.remove(); }, 260); if (o.onClose) o.onClose(); },
+      close() { if (el.classList.contains('closing')) return; el.classList.add('closing'); if (document.activeElement && el.contains(document.activeElement)) document.activeElement.blur(); el.classList.remove('show'); bd.classList.remove('show'); const i = sheets.indexOf(sh); if (i >= 0) sheets.splice(i, 1); setTimeout(() => { el.remove(); bd.remove(); }, 240); if (o.onClose) o.onClose(); },
       err(msg) { const e = $('.ferr', el); if (!e) return; e.hidden = !msg; e.innerHTML = msg ? ic('alert') + '<span>' + esc(msg) + '</span>' : ''; if (msg) toast(msg, 'err'); }
     };
     bd.addEventListener('click', () => sh.close());
@@ -258,35 +278,50 @@
 
   /* ================= TRANG CHỦ ================= */
   function homeHTML() {
+    return '<header class="hdr"><div class="hdr-row"><h1>Kho Của Tôi</h1></div>' +
+      '<div class="search"><span class="si">' + ic('search') + '</span><input id="home-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Tìm tên hàng, vị trí…" value="' + esc(ui.homeQ) + '" aria-label="Tìm tên hàng, mã, vị trí, ghi chú"><button class="clr" data-act="home-clear" aria-label="Xóa tìm kiếm"' + (ui.homeQ ? '' : ' hidden') + '>' + ic('x') + '</button></div>' +
+      overviewHTML() + '</header><div class="wrap" id="home-body">' + homeBodyHTML() + '</div>';
+  }
+  function overviewHTML() {
     const sm = K.summary(S, D);
-    const valNote = sm.inStock === 0 ? 'Chưa có hàng trong kho'
-      : sm.noPrice ? sm.noPrice + ' mặt hàng chưa có giá, chưa tính' : 'Đã tính đủ mọi mặt hàng';
-    return '<header class="hdr"><div class="sub">Quản lý đồ cá nhân</div><h1>Kho Của Tôi</h1>' +
-      '<div class="search"><span class="si">' + ic('search') + '</span><input id="home-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Tìm tên, mã, vị trí, ghi chú…" value="' + esc(ui.homeQ) + '" aria-label="Tìm kiếm"><button class="clr" data-act="home-clear" aria-label="Xóa tìm kiếm"' + (ui.homeQ ? '' : ' hidden') + '>' + ic('x') + '</button></div>' +
-      '<div class="stats"><div class="stat"><div class="k">Mặt hàng còn trong kho</div><div class="v num">' + sm.inStock + '</div><div class="n">' + (sm.outStock ? sm.outStock + ' đã xuất hết' : 'Tổng ' + sm.total + ' mặt hàng') + '</div></div>' +
-      '<div class="stat"><div class="k">Giá trị ước tính</div><div class="v num">' + (sm.inStock && sm.noPrice === sm.inStock ? 'Chưa có giá' : K.fmtMoney(sm.value)) + '</div><div class="n">' + esc(valNote) + '</div></div></div>' +
-      '</header><div class="wrap" id="home-body">' + homeBodyHTML() + '</div>';
+    let val, note = '';
+    if (!sm.inStock) { val = '<div class="val none">—</div>'; note = 'Chưa có hàng trong kho'; }
+    else if (sm.noPrice === sm.inStock) { val = '<div class="val none">Chưa có giá</div>'; note = 'Chưa mặt hàng nào có giá ước tính'; }
+    else {
+      val = '<div class="val num">' + K.fmtMoney(sm.value) + '</div>';
+      if (sm.noPrice) note = ic('alert') + '<span>' + sm.noPrice + ' mặt hàng chưa có giá, chưa tính vào tổng</span>';
+    }
+    return '<div class="overview"><div class="ov-main">' +
+      '<div class="count"><b class="num">' + sm.inStock + '</b><span>mặt hàng</span></div>' +
+      '<div class="sub">' + (sm.outStock ? 'còn trong kho · ' + sm.outStock + ' đã xuất hết' : 'đang còn trong kho') + '</div>' +
+      '<div class="k">Giá trị ước tính</div>' + val + (note ? '<div class="note">' + note + '</div>' : '') +
+      '</div><span class="deco" aria-hidden="true">' + ic('box') + '</span></div>';
   }
   function homeBodyHTML() {
     if (ui.homeQ.trim()) return homeResultsHTML();
     const has = Object.keys(S.items).length > 0;
-    let h = '<div class="big-actions"><button class="big in" data-act="nhap">' + '<span class="ic">' + ic('in') + '</span><span>Nhập kho<small>Thêm hoặc nhập thêm</small></span></button>' +
-      '<button class="big out" data-act="xuat"' + '><span class="ic">' + ic('out') + '</span><span>Xuất kho<small>Lấy ra, cho mượn</small></span></button></div>';
+    let h = '<div class="big-actions"><button class="big" data-act="nhap">' + ic('in') + '<span>Nhập kho</span></button>' +
+      '<button class="big" data-act="xuat">' + ic('out') + '<span>Xuất kho</span></button></div>';
     if (!has) {
-      return h + '<div class="card"><div class="empty"><div class="eic">' + ic('box') + '</div><h3>Kho đang trống</h3><p>Bắt đầu bằng cách nhập món đồ đầu tiên: chụp ảnh, ghi số lượng và nơi cất. Mọi thứ được lưu ngay trên iPhone này.</p><button class="btn pri" style="max-width:320px;margin-top:6px" data-act="nhap">' + ic('plus') + 'Thêm mặt hàng đầu tiên</button><button class="link" data-act="guide" style="margin-top:4px">Xem hướng dẫn nhanh</button></div></div>' + installHint();
+      return h + '<div class="card"><div class="empty"><div class="eic">' + ic('box') + '</div><h3>Kho đang trống</h3><p>Bắt đầu bằng cách nhập món đồ đầu tiên: chụp ảnh, ghi số lượng và nơi cất. Mọi thứ được lưu ngay trên iPhone này.</p><button class="btn pri" data-act="nhap">' + ic('plus') + 'Thêm mặt hàng đầu tiên</button><button class="link" data-act="guide">Xem hướng dẫn nhanh</button></div></div>' + installHint();
     }
     h += installHint() + backupReminder();
+    // Gần đây: mặt hàng vừa có hoạt động, kèm số lượng và vị trí hiện tại
+    const seen = new Set(), recent = [];
+    for (const m of S.movements.slice().sort((a, b) => b.seq - a.seq)) {
+      if (!S.items[m.itemId] || seen.has(m.itemId)) continue;
+      seen.add(m.itemId); recent.push(m);
+      if (recent.length === 5) break;
+    }
+    h += '<section class="sec"><h2>Gần đây <button data-tab="history">Xem tất cả' + ic('chev') + '</button></h2><div class="rows">' + recent.map(recentRowHTML).join('') + '</div></section>';
     // Đang cho mượn
     const loans = Object.values(D.loans).filter(l => l.outstanding > 0 && S.items[l.itemId]);
     if (loans.length) {
-      h += '<section class="sec"><h2>Đang cho mượn</h2><div class="card">' + loans.slice(0, 5).map(l => {
+      h += '<section class="sec"><h2>Đang cho mượn <span class="cnt">' + loans.length + ' lượt</span></h2><div class="rows">' + loans.slice(0, 5).map(l => {
         const it = S.items[l.itemId];
-        return '<button class="row" data-act="open-item" data-id="' + it.id + '">' + thumb(it) + '<div class="mid"><div class="t">' + esc(it.name) + '</div><div class="s">' + ic('user') + esc(l.recipient || 'Chưa ghi người mượn') + ' · ' + K.fmtDate(l.date) + '</div></div><div class="end"><span class="badge b-loan">' + qu(l.outstanding, it) + '</span></div></button>';
+        return '<button class="row" data-act="open-item" data-id="' + it.id + '">' + thumb(it) + '<div class="mid"><div class="t">' + esc(it.name) + '</div><div class="s">' + ic('user') + esc(l.recipient || 'Chưa ghi người mượn') + ' · ' + K.fmtDate(l.date) + '</div></div><div class="end"><span class="badge b-loan">Mượn ' + qu(l.outstanding, it) + '</span></div>' + ic('chev', 'chev') + '</button>';
       }).join('') + '</div></section>';
     }
-    // Hoạt động gần đây
-    const recent = S.movements.slice().sort((a, b) => b.seq - a.seq).slice(0, 6);
-    h += '<section class="sec"><h2>Hoạt động gần đây <button data-tab="history">Xem tất cả</button></h2><div class="card">' + recent.map(m => histRowHTML(m, true, true)).join('') + '</div></section>';
     // Lối tắt theo loại
     const catCount = {};
     for (const it of Object.values(S.items)) if (K.statusOf(D, it.id) === 'con') catCount[it.categoryId || ''] = (catCount[it.categoryId || ''] || 0) + 1;
@@ -303,11 +338,20 @@
     }
     return h;
   }
+  function recentRowHTML(m) {
+    const it = S.items[m.itemId], ds = K.describe(S, D, m);
+    const what = (ds.undone ? 'Đã hoàn tác · ' : '') + ds.title.replace('Xuất · ', 'Xuất ') + ' ' + (ds.sign === '⇄' ? '' : ds.sign) + K.fmtQty(ds.qty) + ' · ' + dayLabel(m.date);
+    return '<button class="row" data-act="open-item" data-id="' + it.id + '">' + thumb(it) +
+      '<div class="mid"><div class="t">' + esc(it.name) + '</div>' +
+      '<div class="s"><span class="num">' + K.fmtQty(D.total[it.id]) + '</span> ' + esc(unitOf(it)) + ' · ' + esc(locShort(it)) + '</div>' +
+      '<div class="s3">' + esc(what) + '</div></div>' +
+      (K.statusOf(D, it.id) === 'het' ? '<div class="end">' + badge(it.id) + '</div>' : '') + ic('chev', 'chev') + '</button>';
+  }
   function homeResultsHTML() {
     const res = K.filterItems(S, D, { q: ui.homeQ, status: 'all', sort: 'name' });
     res.sort((a, b) => (K.statusOf(D, a.id) === 'con' ? 0 : 1) - (K.statusOf(D, b.id) === 'con' ? 0 : 1));
-    if (!res.length) return '<div class="card"><div class="empty"><div class="eic">' + ic('search') + '</div><h3>Không tìm thấy</h3><p>Không có mặt hàng nào khớp “' + esc(ui.homeQ) + '”, kể cả hàng đã xuất hết. Thử từ khóa ngắn hơn, có thể gõ không dấu.</p></div></div>';
-    return '<section class="sec"><h2>' + res.length + ' kết quả <button data-act="home-to-items">Mở trong Hàng hóa</button></h2><div class="card">' + res.slice(0, 40).map(it => itemRowHTML(it)).join('') + '</div></section>';
+    if (!res.length) return '<div class="card"><div class="empty"><div class="eic">' + ic('search') + '</div><h3>Không tìm thấy</h3><p>Không có mặt hàng nào khớp “' + esc(ui.homeQ) + '”, kể cả hàng đã hết. Thử từ khóa ngắn hơn, có thể gõ không dấu.</p></div></div>';
+    return '<section class="sec"><h2>' + res.length + ' kết quả <button data-act="home-to-items">Mở trong Hàng hóa' + ic('chev') + '</button></h2><div class="rows">' + res.slice(0, 40).map(it => itemRowHTML(it)).join('') + '</div></section>';
   }
   function installHint() {
     const ios = /iP(hone|ad|od)/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
@@ -323,27 +367,32 @@
 
   /* ================= HÀNG HÓA ================= */
   function itemRowHTML(it) {
+    const st = K.statusOf(D, it.id);
     const loaned = D.loaned[it.id] > 0 ? '<span class="badge b-loan">Mượn ' + K.fmtQty(D.loaned[it.id]) + '</span>' : '';
     return '<button class="row" data-act="open-item" data-id="' + it.id + '">' + thumb(it) +
-      '<div class="mid"><div class="t">' + esc(it.name) + '</div><div class="s">' + ic('pin') + '<span style="overflow:hidden;text-overflow:ellipsis">' + esc(locSummary(it)) + '</span></div></div>' +
-      '<div class="end"><div class="qty"><span class="num">' + K.fmtQty(D.total[it.id]) + '</span> <small>' + esc(unitOf(it)) + '</small></div>' + badge(it.id) + loaned + '</div></button>';
+      '<div class="mid"><div class="t">' + esc(it.name) + '</div><div class="s">' + ic('pin') + esc(locShort(it)) + '</div></div>' +
+      '<div class="end"><div class="qty"><span class="num">' + K.fmtQty(D.total[it.id]) + '</span> <small>' + esc(unitOf(it)) + '</small></div>' + (st === 'het' ? badge(it.id) : '') + loaned + '</div>' + ic('chev', 'chev') + '</button>';
   }
+  const SORTS = [['name', 'Tên A–Z'], ['recent', 'Ngày nhập gần nhất'], ['qty', 'Số lượng còn nhiều nhất'], ['value', 'Giá trị cao nhất']];
   function activeFilterCount() { const f = ui.items; return (f.categoryId ? 1 : 0) + (f.locPrefix ? 1 : 0) + (f.from || f.to ? 1 : 0); }
   function itemsHTML() {
-    const f = ui.items, n = activeFilterCount();
-    const seg = [['con', 'Còn hàng'], ['het', 'Đã xuất hết'], ['all', 'Tất cả']].map(([k, l]) => '<button data-act="status" data-v="' + k + '" class="' + (f.status === k ? 'on' : '') + '" aria-pressed="' + (f.status === k) + '">' + l + '</button>').join('');
-    const chips = [];
-    if (f.categoryId) chips.push(['categoryId', ic('tag') + esc(f.categoryId === '__none' ? 'Chưa phân loại' : (S.categories[f.categoryId] || {}).name || '')]);
-    if (f.locPrefix) { const p = K.locationPrefixes(S).find(x => x.key === f.locPrefix); chips.push(['locPrefix', ic('pin') + esc(p ? p.label : f.locPrefix)]); }
-    if (f.from || f.to) chips.push(['date', 'Nhập ' + (f.from ? 'từ ' + K.fmtDate(f.from) : '') + (f.to ? ' đến ' + K.fmtDate(f.to) : '')]);
-    return '<header class="hdr sticky compact"><div class="hdr-row"><h1>Hàng hóa</h1></div>' +
-      '<div class="search"><span class="si">' + ic('search') + '</span><input id="items-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Tìm tên, mã, vị trí, ghi chú…" value="' + esc(f.q) + '" aria-label="Tìm hàng hóa"><button class="clr" data-act="items-clear" aria-label="Xóa tìm kiếm"' + (f.q ? '' : ' hidden') + '>' + ic('x') + '</button></div>' +
+    const f = ui.items;
+    const seg = [['con', 'Còn hàng'], ['het', 'Đã hết'], ['all', 'Tất cả']].map(([k, l]) => '<button data-act="status" data-v="' + k + '" class="' + (f.status === k ? 'on' : '') + '" aria-pressed="' + (f.status === k) + '">' + l + '</button>').join('');
+    const catLabel = f.categoryId ? (f.categoryId === '__none' ? 'Chưa phân loại' : (S.categories[f.categoryId] || {}).name || 'Loại hàng') : 'Loại hàng';
+    const lp = f.locPrefix ? K.locationPrefixes(S).find(x => x.key === f.locPrefix) : null;
+    const locLabel = f.locPrefix ? (lp ? lp.label : 'Vị trí') : 'Vị trí';
+    const dateLabel = f.from || f.to ? (f.from ? K.fmtDate(f.from) : '…') + ' – ' + (f.to ? K.fmtDate(f.to) : '…') : 'Ngày nhập';
+    const sortLabel = (SORTS.find(s => s[0] === f.sort) || SORTS[0])[1];
+    const fc = (act, icn, label, set, aria) => '<button class="fchip' + (set ? ' set' : '') + '" data-act="' + act + '" aria-label="' + esc(aria) + '">' + ic(icn) + '<span>' + esc(label) + '</span>' + ic('chevd', 'cv') + '</button>';
+    return '<header class="hdr sticky compact"><div class="hdr-row"><h1>Hàng hóa</h1><button class="add-btn" data-act="nhap" aria-label="Thêm mặt hàng">' + ic('plus') + '</button></div>' +
+      '<div class="search"><span class="si">' + ic('search') + '</span><input id="items-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Tìm tên hàng, vị trí…" value="' + esc(f.q) + '" aria-label="Tìm tên hàng, mã, vị trí, ghi chú"><button class="clr" data-act="items-clear" aria-label="Xóa tìm kiếm"' + (f.q ? '' : ' hidden') + '>' + ic('x') + '</button></div>' +
       '<div class="seg" role="group" aria-label="Trạng thái">' + seg + '</div></header>' +
-      '<div class="wrap"><div class="toolbar"><button class="chip' + (n ? ' on' : '') + '" data-act="item-filter">' + ic('filter') + 'Bộ lọc' + (n ? ' <b>' + n + '</b>' : '') + '</button>' +
-      '<select id="items-sort" aria-label="Sắp xếp"><option value="name"' + (f.sort === 'name' ? ' selected' : '') + '>Sắp xếp: Tên A–Z</option><option value="recent"' + (f.sort === 'recent' ? ' selected' : '') + '>Ngày nhập gần nhất</option><option value="qty"' + (f.sort === 'qty' ? ' selected' : '') + '>Số lượng còn nhiều nhất</option><option value="value"' + (f.sort === 'value' ? ' selected' : '') + '>Giá trị cao nhất</option></select></div>' +
-      (chips.length ? '<div class="chips">' + chips.map(([k, l]) => '<button class="chip on" data-act="rm-filter" data-k="' + k + '">' + l + ' ' + ic('x') + '</button>').join('') + '</div>' : '') +
-      '<div id="items-list">' + itemsListHTML() + '</div></div>' +
-      '<button class="fab" data-act="nhap" aria-label="Thêm mặt hàng">' + ic('plus') + '</button>';
+      '<div class="wrap"><div class="toolbar">' +
+      fc('f-cat', 'tag', catLabel, !!f.categoryId, 'Lọc theo loại hàng: ' + catLabel) +
+      fc('f-loc', 'pin', locLabel, !!f.locPrefix, 'Lọc theo vị trí: ' + locLabel) +
+      fc('f-date', 'cal', dateLabel, !!(f.from || f.to), 'Lọc theo ngày nhập') +
+      fc('f-sort', 'sort', sortLabel, false, 'Sắp xếp: ' + sortLabel) + '</div>' +
+      '<div id="items-list">' + itemsListHTML() + '</div></div>';
   }
   function itemsFilter() {
     const f = Object.assign({}, ui.items);
@@ -355,18 +404,18 @@
   }
   function itemsListHTML() {
     if (!Object.keys(S.items).length) {
-      return '<div class="card"><div class="empty"><div class="eic">' + ic('box') + '</div><h3>Chưa có mặt hàng nào</h3><p>Nhấn nút bên dưới để thêm món đồ đầu tiên vào kho.</p><button class="btn pri" style="max-width:320px;margin-top:6px" data-act="nhap">' + ic('plus') + 'Thêm mặt hàng đầu tiên</button></div></div>';
+      return '<div class="card"><div class="empty"><div class="eic">' + ic('box') + '</div><h3>Chưa có mặt hàng nào</h3><p>Nhấn nút bên dưới để thêm món đồ đầu tiên vào kho.</p><button class="btn pri" data-act="nhap">' + ic('plus') + 'Thêm mặt hàng đầu tiên</button></div></div>';
     }
     const res = itemsFilter();
     if (!res.length) {
       let more = '';
       if (ui.items.status !== 'all') {
         const all = K.filterItems(S, D, Object.assign({}, ui.items, { status: 'all', categoryId: ui.items.categoryId === '__none' ? '' : ui.items.categoryId }));
-        if (all.length) more = '<button class="btn sec" style="max-width:320px" data-act="status" data-v="all">Xem ' + all.length + ' mặt hàng khớp trong “Tất cả”</button>';
+        if (all.length) more = '<button class="btn sec" data-act="status" data-v="all">Xem ' + all.length + ' mặt hàng khớp trong “Tất cả”</button>';
       }
       return '<div class="card"><div class="empty"><div class="eic">' + ic('search') + '</div><h3>Không có mặt hàng phù hợp</h3><p>' + (ui.items.status === 'con' ? 'Danh sách đang chỉ hiện hàng còn trong kho.' : 'Thử bỏ bớt bộ lọc hoặc đổi từ khóa.') + '</p>' + more + (activeFilterCount() || ui.items.q ? '<button class="link" data-act="clear-filters">Xóa tìm kiếm và bộ lọc</button>' : '') + '</div></div>';
     }
-    return '<div class="count-line">' + res.length + ' mặt hàng</div><div class="card" style="margin-top:8px">' + res.map(itemRowHTML).join('') + '</div>';
+    return '<div class="count-line"><span>' + res.length + ' mặt hàng</span>' + (activeFilterCount() ? '<button data-act="clear-filters">Bỏ lọc</button>' : '') + '</div><div class="rows" style="margin-top:8px">' + res.map(itemRowHTML).join('') + '</div>';
   }
 
   /* ================= CHI TIẾT ================= */
@@ -379,13 +428,13 @@
     const hasStock = D.total[id] > 0;
     const valTxt = p.avg == null ? 'Chưa có giá' : K.fmtMoney(p.value);
     const valNote = p.avg == null ? 'Chưa đợt nhập nào có giá' : (p.unpricedBatches ? p.unpricedBatches + ' đợt chưa có giá' : 'Bình quân các đợt nhập');
-    return '<header class="hdr sticky compact"><div class="hdr-row"><button class="hbtn" data-act="back" aria-label="Quay lại">' + ic('back') + '</button><h1>' + esc(it.name) + '</h1><button class="hbtn" data-act="edit-item" data-id="' + id + '" aria-label="Sửa thông tin">' + ic('edit') + '</button></div></header>' +
+    return '<header class="hdr sticky detail"><div class="hdr-row"><button class="hbtn plain" data-act="back" aria-label="Quay lại">' + ic('back') + '</button><h1>' + esc(it.name) + '</h1><button class="hbtn" data-act="edit-item" data-id="' + id + '" aria-label="Sửa thông tin">' + ic('edit') + '</button></div></header>' +
       '<div class="wrap">' +
       (it.thumb ? '<button class="photo-hero" data-act="zoom" data-id="' + id + '" aria-label="Phóng to ảnh"><img src="' + it.thumb + '" alt="" id="hero-img"><span class="zoom">' + ic('zoom') + 'Phóng to</span></button>'
         : '<button class="photo-hero" style="height:110px" data-act="edit-item" data-id="' + id + '">' + '<span style="display:flex;flex-direction:column;align-items:center;gap:6px;font-weight:600">' + ic('camera') + 'Thêm ảnh thực tế</span></button>') +
       '<div class="title-block"><h2>' + esc(it.name) + '</h2><div class="meta"><span class="num">Mã ' + esc(it.code) + '</span>' + (catOf(it) ? '<span>· ' + esc(catOf(it)) + '</span>' : '') + badge(id) + '</div></div>' +
       '<div class="card"><div class="kpis"><div class="kpi"><div class="k">Tổng tồn</div><div class="v">' + qu(D.total[id], it) + '</div><div class="n">' + (locs.length > 1 ? locs.length + ' vị trí' : locs.length ? '1 vị trí' : 'Không còn trong kho') + '</div></div>' +
-      '<div class="kpi"><div class="k">Giá trị ước tính</div><div class="v num" style="font-size:' + (valTxt.length > 12 ? 15 : 18) + 'px">' + valTxt + '</div><div class="n">' + esc(valNote) + '</div></div>' +
+      '<div class="kpi"><div class="k">Giá trị ước tính</div><div class="v num' + (p.avg == null ? '' : ' gold') + '" style="font-size:' + (valTxt.length > 12 ? 0.9375 : 1.125) + 'rem">' + valTxt + '</div><div class="n">' + esc(valNote) + '</div></div>' +
       '<div class="kpi"><div class="k">Đang cho mượn</div><div class="v" style="color:' + (D.loaned[id] > 0 ? 'var(--loan)' : 'inherit') + '">' + qu(D.loaned[id] || 0, it) + '</div><div class="n">' + (loans.length ? loans.length + ' lượt chưa trả' : 'Không có') + '</div></div></div></div>' +
       '<div class="actions4">' +
       '<button class="a4" data-act="nhap" data-id="' + id + '"><span class="act-ic t-nhap">' + ic('in') + '</span>Nhập thêm</button>' +
@@ -429,7 +478,7 @@
     const list = K.filterHistory(S, D, f);
     const nf = (f.itemId ? 1 : 0) + (f.from || f.to ? 1 : 0);
     let body = '';
-    if (!S.movements.length) body = '<div class="card"><div class="empty"><div class="eic">' + ic('clock') + '</div><h3>Chưa có hoạt động</h3><p>Mỗi lần nhập, xuất, cho mượn, chuyển vị trí hay kiểm kê đều được ghi lại ở đây.</p><button class="btn pri" style="max-width:320px" data-act="nhap">' + ic('plus') + 'Thêm mặt hàng đầu tiên</button></div></div>';
+    if (!S.movements.length) body = '<div class="card"><div class="empty"><div class="eic">' + ic('clock') + '</div><h3>Chưa có hoạt động</h3><p>Mỗi lần nhập, xuất, cho mượn, chuyển vị trí hay kiểm kê đều được ghi lại ở đây.</p><button class="btn pri" data-act="nhap">' + ic('plus') + 'Thêm mặt hàng đầu tiên</button></div></div>';
     else if (!list.length) body = '<div class="card"><div class="empty"><div class="eic">' + ic('filter') + '</div><h3>Không có hoạt động phù hợp</h3><p>Thử đổi loại hoạt động hoặc khoảng thời gian.</p><button class="link" data-act="hist-clear">Bỏ bộ lọc</button></div></div>';
     else {
       let cur = '', out = '';
@@ -467,10 +516,35 @@
       row('guide', 'book', 'Hướng dẫn sử dụng', 'Nhập, xuất, cho mượn, sao lưu') +
       row('storage', 'disk', 'Bộ nhớ trên máy', 'Dung lượng và độ bền dữ liệu') + '</div></section>' +
       '<section class="sec"><h2>Nâng cao</h2><div class="card"><button class="setting" data-act="wipe"><span class="act-ic" style="background:var(--danger-soft);color:var(--danger)">' + ic('trash') + '</span><div class="mid"><div class="t" style="color:var(--danger)">Xóa toàn bộ dữ liệu</div><div class="s">' + nItems + ' mặt hàng, ' + S.movements.length + ' hoạt động</div></div></button></div></section>' +
-      '<p class="hint" style="text-align:center;margin:4px 0 0">Kho Của Tôi · phiên bản ' + APP_VERSION + ' · dữ liệu lưu trên thiết bị này</p></div>';
+      '<p class="hint foot-note">Kho Của Tôi · phiên bản ' + APP_VERSION + ' · dữ liệu lưu trên thiết bị này</p></div>';
   }
 
   /* ================= sự kiện khung ================= */
+  function bindUX() {
+    // Chống bấm xác nhận nhiều lần khi đang lưu
+    document.addEventListener('click', e => {
+      const b = e.target.closest('button');
+      if (saving && b && b.closest('.sheet, .dialog-wrap')) { e.stopPropagation(); e.preventDefault(); return; }
+      if (b) lastBtn = b;
+    }, true);
+    // Ô số lượng: chạm để nhập, chọn sẵn số cũ
+    document.addEventListener('focusin', e => {
+      const t = e.target;
+      if (t.matches && t.matches('.qbox input')) setTimeout(() => { try { t.select(); } catch (er) { } }, 0);
+      // Giữ ô đang nhập không bị bàn phím che
+      if (t.matches && t.matches('input, textarea, select') && t.closest('.sh-body, .dialog')) setTimeout(() => t.scrollIntoView({ block: 'center', behavior: 'smooth' }), 280);
+    });
+    // Bàn phím iPhone: nâng biểu mẫu lên đúng phần màn hình còn nhìn thấy
+    const vv = window.visualViewport;
+    if (vv) {
+      const fit = () => {
+        const kb = Math.max(0, window.innerHeight - vv.height - vv.offsetTop);
+        document.documentElement.style.setProperty('--kb', (kb > 80 ? kb : 0) + 'px');
+        document.body.classList.toggle('kbopen', kb > 80);
+      };
+      vv.addEventListener('resize', fit); vv.addEventListener('scroll', fit);
+    }
+  }
   function bindGlobal() {
     $('#tabbar').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); });
     const v = $('#view');
@@ -496,7 +570,10 @@
         case 'by-loc': Object.assign(ui.items, { locPrefix: a.dataset.key, categoryId: '', q: '', status: 'con' }); return go('items');
         case 'items-clear': ui.items.q = ''; return refresh();
         case 'status': ui.items.status = a.dataset.v; return refresh();
-        case 'item-filter': return sheetItemFilter();
+        case 'item-filter': case 'f-date': return sheetItemFilter();
+        case 'f-cat': return pickOption({ title: 'Lọc theo loại hàng', current: ui.items.categoryId, options: [['', 'Tất cả loại hàng']].concat(Object.values(S.categories).sort((x, y) => (x.order || 0) - (y.order || 0)).map(c => [c.id, c.name]), [['__none', 'Chưa phân loại']]), onPick: v => { ui.items.categoryId = v; refresh(); } });
+        case 'f-loc': return pickOption({ title: 'Lọc theo vị trí', current: ui.items.locPrefix, icon: 'pin', options: [['', 'Mọi vị trí']].concat(K.locationPrefixes(S).map(x => [x.key, x.label, x.depth > 1 ? 'Gồm cả các cấp bên trong' : 'Cả kho'])), onPick: v => { ui.items.locPrefix = v; refresh(); }, empty: 'Chưa có vị trí nào. Vị trí được tạo khi bạn nhập kho.' });
+        case 'f-sort': return pickOption({ title: 'Sắp xếp', current: ui.items.sort, icon: 'sort', options: SORTS, onPick: v => { ui.items.sort = v; lsSet('sort', v); refresh(); } });
         case 'rm-filter': if (a.dataset.k === 'date') { ui.items.from = ui.items.to = ''; } else ui.items[a.dataset.k] = ''; return refresh();
         case 'clear-filters': Object.assign(ui.items, { q: '', categoryId: '', locPrefix: '', from: '', to: '' }); return refresh();
         case 'htype': ui.hist.type = a.dataset.v; ui.histLimit = 120; return refresh();
@@ -533,8 +610,8 @@
   }
 
   /* ================= các trường dùng chung trong biểu mẫu ================= */
-  function stepper(id, val, extraBtn) {
-    return '<div class="stepper"><button type="button" data-step="-1" data-for="' + id + '" aria-label="Bớt 1">−</button><input class="inp num" id="' + id + '" inputmode="decimal" autocomplete="off" value="' + esc(val) + '" aria-label="Số lượng"><button type="button" data-step="1" data-for="' + id + '" aria-label="Thêm 1">+</button>' + (extraBtn || '') + '</div>';
+  function stepper(id, val) {
+    return '<div class="qbox"><button type="button" data-step="-1" data-for="' + id + '" aria-label="Bớt 1">' + ic('minus') + '</button><input class="num" id="' + id + '" inputmode="decimal" enterkeyhint="done" autocomplete="off" value="' + esc(val) + '" placeholder="0" aria-label="Số lượng, chạm để nhập"><button type="button" data-step="1" data-for="' + id + '" aria-label="Thêm 1">' + ic('plus') + '</button></div>';
   }
   function bindSteppers(root, onChange) {
     root.addEventListener('click', e => {
@@ -576,9 +653,10 @@
     const it = S.items[itemId];
     return '<div class="card">' + ids.map(l => '<button type="button" class="loc-opt' + (selected === l ? ' on' : '') + '" data-' + name + '="' + l + '">' + ic('pin') + '<span class="p">' + esc(L(l)) + '<small>Đang có ' + K.fmtQty(st[l]) + ' ' + esc(unitOf(it)) + '</small></span>' + (selected === l ? ic('check', 'ck') : '') + '</button>').join('') + '</div>';
   }
-  function itemCard(it, changeAct) {
-    return '<div class="sel-item">' + thumb(it) + '<div class="mid"><div class="t">' + esc(it.name) + '</div><div class="s num">Mã ' + esc(it.code) + ' · tồn ' + K.fmtQty(D.total[it.id]) + ' ' + esc(unitOf(it)) + '</div></div>' + (changeAct ? '<button type="button" class="chip" data-act="' + changeAct + '">Đổi</button>' : '') + '</div>';
+  function itemCard(it, changeAct, locId) {
+    return '<div class="sel-item">' + thumb(it) + '<div class="mid"><div class="t">' + esc(it.name) + '</div><div class="s">Hiện có: <b class="num">' + K.fmtQty(D.total[it.id]) + ' ' + esc(unitOf(it)) + '</b></div><div class="s">' + esc(locId ? L(locId) : locShort(it)) + '</div></div>' + (changeAct ? '<button type="button" class="pill" data-act="' + changeAct + '">Đổi</button>' : '') + '</div>';
   }
+
 
   /* ---------- chọn vị trí ---------- */
   function pickLocation(o) {
@@ -643,18 +721,18 @@
         h += photoBlock(f.photo && f.photo.thumb);
         h += '<div class="field"><span class="flabel">Đơn vị tính</span>' + chipsSelect('units', f.unitId) + '</div>';
         h += '<div class="field"><span class="flabel">Loại hàng <span class="opt">không bắt buộc</span></span>' + chipsSelect('categories', f.categoryId, true) + '</div>';
-        h += '<div class="grid2"><div class="field"><label for="n-code">Mã hàng</label><input class="inp num" id="n-code" value="' + esc(f.code) + '" autocomplete="off" autocapitalize="characters"></div><div class="field"><label for="n-date">Ngày nhập</label><input class="inp" type="date" id="n-date" value="' + f.date + '"></div></div>';
+        h += '<div class="field"><label for="n-code">Mã hàng <span class="opt">tự tạo, sửa được</span></label><input class="inp num" id="n-code" value="' + esc(f.code) + '" autocomplete="off" autocapitalize="characters"></div>' + dateInput('n-date', 'Ngày nhập', f.date);
         h += '<div class="field"><label for="n-inote">Ghi chú mặt hàng <span class="opt">không bắt buộc</span></label><textarea class="inp" id="n-inote" rows="2" placeholder="Model, màu sắc, bảo hành…">' + esc(f.itemNote) + '</textarea></div>';
         h += '<div class="flabel" style="margin-top:4px;border-top:1px solid var(--line);padding-top:14px">Đợt nhập này</div>';
       }
       const unit = it ? unitOf(it) : (S.units[f.unitId] || {}).name || '';
-      h += '<div class="field"><span class="flabel">Số lượng <span class="opt" id="n-unit">' + esc(unit) + '</span></span>' + stepper('n-qty', f.qty) + '</div>';
-      h += '<div class="field"><label for="n-price">Giá ước tính mỗi ' + esc(unit || 'đơn vị') + ' (VNĐ) <span class="opt">để trống nếu chưa biết</span></label><input class="inp num" id="n-price" inputmode="numeric" value="' + esc(f.price) + '" placeholder="Chưa có giá" autocomplete="off"></div>';
-      if (it) h += '<div class="field"><label for="n-date">Ngày nhập</label><input class="inp" type="date" id="n-date" value="' + f.date + '"></div>';
+      h += '<div class="field"><span class="flabel">Số lượng nhập <span class="opt" id="n-unit">' + esc(unit) + '</span></span>' + stepper('n-qty', f.qty) + '</div>';
+      h += '<div class="field"><label for="n-price">Giá ước tính / ' + esc(unit || 'đơn vị') + ' <span class="opt">không bắt buộc</span></label><div class="ifield">' + ic('coin') + '<input class="inp num" id="n-price" inputmode="numeric" value="' + esc(f.price) + '" placeholder="Chưa biết thì để trống" autocomplete="off"></div><span class="hint">Tính bằng VNĐ. Để trống sẽ hiện “Chưa có giá”, không tính là 0 đồng.</span></div>';
+      if (it) h += dateInput('n-date', 'Ngày nhập', f.date);
       h += locButton('n-loc', f.locId);
       h += '<div class="field"><label for="n-note">Ghi chú đợt nhập <span class="opt">không bắt buộc</span></label><input class="inp" id="n-note" value="' + esc(f.note) + '" placeholder="Mua ở đâu, ai tặng…" autocomplete="off"></div>';
       sh.body.innerHTML = h;
-      sh.foot.innerHTML = '<div class="ferr" hidden></div><div class="btn-row"><button class="btn sec" data-act="n-save-more" style="flex:0 0 40%">Lưu, nhập tiếp</button><button class="btn pri" data-act="n-save">' + ic('check') + 'Lưu nhập kho</button></div>';
+      sh.foot.innerHTML = '<div class="ferr" hidden></div><div class="btn-row"><button class="btn sec" data-act="n-save-more" style="flex:0 0 42%;font-size:.9375rem">Lưu &amp; nhập tiếp</button><button class="btn pri" data-act="n-save">' + ic('check') + 'Lưu nhập kho</button></div>';
     };
     const sugg = () => {
       const box = $('#n-sugg', sh.body); if (!box) return;
@@ -737,50 +815,61 @@
   function sheetXuat(prefItemId) {
     const sh = openSheet({ title: 'Xuất kho', full: true });
     const f = { itemId: prefItemId && S.items[prefItemId] && D.total[prefItemId] > 0 ? prefItemId : null, locId: null, qty: '', reason: 'su_dung', recipient: '', date: K.todayISO(), note: '', q: '' };
-    const autoLoc = () => { const s = D.stock[f.itemId] || {}; const ids = Object.keys(s).filter(k => s[k] > 0); f.locId = ids.length === 1 ? ids[0] : (ids.includes(f.locId) ? f.locId : null); };
+    const locsOf = () => { const s = D.stock[f.itemId] || {}; return Object.keys(s).filter(k => s[k] > 0); };
+    const autoLoc = () => { const ids = locsOf(); f.locId = ids.length === 1 ? ids[0] : (ids.includes(f.locId) ? f.locId : null); };
     if (f.itemId) autoLoc();
     const chooser = () => {
       const res = K.filterItems(S, D, { q: f.q, status: 'con', sort: 'name' });
-      return res.length ? '<div class="card">' + res.slice(0, 60).map(it => '<button type="button" class="row" data-choose="' + it.id + '">' + thumb(it) + '<div class="mid"><div class="t">' + esc(it.name) + '</div><div class="s">' + ic('pin') + esc(locSummary(it)) + '</div></div><div class="end"><div class="qty">' + qu(D.total[it.id], it) + '</div></div></button>').join('') + '</div>'
+      return res.length ? '<div class="rows">' + res.slice(0, 60).map(it => '<button type="button" class="row" data-choose="' + it.id + '">' + thumb(it) + '<div class="mid"><div class="t">' + esc(it.name) + '</div><div class="s">' + ic('pin') + esc(locShort(it)) + '</div></div><div class="end"><div class="qty">' + qu(D.total[it.id], it) + '</div></div>' + ic('chev', 'chev') + '</button>').join('') + '</div>'
         : '<div class="card"><div class="empty"><div class="eic">' + ic('box') + '</div><h3>' + (Object.keys(S.items).length ? 'Không có hàng phù hợp' : 'Kho đang trống') + '</h3><p>' + (Object.keys(S.items).length ? 'Chỉ hàng còn trong kho mới xuất được.' : 'Hãy nhập kho trước khi xuất.') + '</p></div></div>';
     };
+    const recLabel = () => f.reason === 'cho_muon' ? 'Người mượn' : f.reason === 'chuyen_di' ? 'Nơi nhận' : 'Người nhận';
     const draw = () => {
       const it = f.itemId ? S.items[f.itemId] : null;
       if (!it) {
-        sh.body.innerHTML = '<div class="field"><label for="x-q">Chọn mặt hàng cần xuất</label><input class="inp" id="x-q" type="search" placeholder="Gõ tên, mã hoặc vị trí…" value="' + esc(f.q) + '" autocomplete="off"></div><div id="x-list">' + chooser() + '</div>';
-        sh.foot.innerHTML = '<div class="hint" style="text-align:center">Chọn một mặt hàng để tiếp tục</div>';
+        sh.body.innerHTML = '<div class="field"><label for="x-q">Chọn mặt hàng cần xuất</label><div class="ifield">' + ic('search') + '<input class="inp" id="x-q" type="search" placeholder="Tìm tên hàng, vị trí…" value="' + esc(f.q) + '" autocomplete="off"></div></div><div id="x-list">' + chooser() + '</div>';
+        sh.foot.innerHTML = '<div class="why">' + ic('info') + '<span>Chọn một mặt hàng để tiếp tục</span></div>';
         return;
       }
-      const showRec = f.reason !== 'su_dung';
-      const recLabel = f.reason === 'cho_muon' ? 'Người mượn' : f.reason === 'chuyen_di' ? 'Nơi nhận' : 'Người hoặc nơi nhận';
-      sh.body.innerHTML = '<div class="field"><span class="flabel">Mặt hàng</span>' + itemCard(it, 'x-change') + '</div>' +
-        '<div class="field"><span class="flabel">Lấy từ vị trí</span>' + locOptions(it.id, f.locId, 'xloc') + '</div>' +
-        '<div class="field"><span class="flabel">Số lượng xuất <span class="opt">' + esc(unitOf(it)) + '</span></span>' + stepper('x-qty', f.qty, '<button type="button" class="all" data-act="x-all">Xuất hết</button>') + '</div>' +
-        '<div class="field"><span class="flabel">Lý do</span><div class="wrapchips">' + Object.entries(K.REASONS).map(([k, l]) => '<button type="button" class="chip' + (f.reason === k ? ' on' : '') + '" data-reason="' + k + '">' + l + '</button>').join('') + '</div>' +
+      const many = locsOf().length > 1;
+      sh.body.innerHTML = itemCard(it, prefItemId ? '' : 'x-change', many ? null : f.locId) +
+        (many ? '<div class="field"><span class="flabel">Lấy từ vị trí</span>' + locOptions(it.id, f.locId, 'xloc') + '</div>' : '') +
+        '<div class="field"><div class="flabel"><span>Số lượng xuất</span><button type="button" class="pill" data-act="x-all">Xuất hết</button></div>' + stepper('x-qty', f.qty) + '<div class="after" id="x-after" aria-live="polite"></div></div>' +
+        dateInput('x-date', 'Ngày xuất', f.date) +
+        '<div class="field"><span class="flabel">Lý do xuất</span><div class="wrapchips" role="radiogroup" aria-label="Lý do xuất">' + Object.entries(K.REASONS).map(([k, l]) => '<button type="button" role="radio" aria-checked="' + (f.reason === k) + '" class="chip' + (f.reason === k ? ' on' : '') + '" data-reason="' + k + '">' + l + '</button>').join('') + '</div>' +
         (f.reason === 'cho_muon' ? '<span class="hint">Hàng cho mượn được trừ khỏi kho và hiện ở mục “Đang cho mượn” cho đến khi bạn nhận lại.</span>' : '') +
         (f.reason === 'chuyen_di' ? '<span class="hint">“Chuyển đi” là đưa ra khỏi kho. Để đổi chỗ cất trong kho, dùng “Chuyển vị trí”.</span>' : '') + '</div>' +
-        (showRec ? '<div class="field"><label for="x-rec">' + recLabel + ' <span class="opt">không bắt buộc</span></label><input class="inp" id="x-rec" value="' + esc(f.recipient) + '" autocomplete="off" placeholder="' + (f.reason === 'cho_muon' ? 'Ví dụ: anh Tuấn' : 'Ví dụ: nhà bác Hai') + '"></div>' : '') +
-        '<div class="grid2"><div class="field"><label for="x-date">Ngày xuất</label><input class="inp" type="date" id="x-date" value="' + f.date + '"></div><div class="field"><label for="x-note">Ghi chú</label><input class="inp" id="x-note" value="' + esc(f.note) + '" autocomplete="off"></div></div>' +
-        '<div id="x-prev"></div>';
-      sh.foot.innerHTML = '<div class="ferr" hidden></div><button class="btn pri" data-act="x-save">' + ic('out') + '<span id="x-btn">Xác nhận xuất</span></button>';
+        '<div class="field"><label for="x-rec">' + recLabel() + ' <span class="opt">không bắt buộc</span></label><div class="ifield">' + ic('user') + '<input class="inp" id="x-rec" value="' + esc(f.recipient) + '" autocomplete="off" enterkeyhint="next" placeholder="Nhập tên ' + recLabel().toLowerCase() + '…"></div></div>' +
+        '<div class="field"><label for="x-note">Ghi chú <span class="opt">không bắt buộc</span></label><div class="ifield">' + ic('note') + '<textarea class="inp" id="x-note" rows="2" placeholder="Nhập ghi chú…">' + esc(f.note) + '</textarea></div></div>';
+      sh.foot.innerHTML = '<div class="ferr" hidden></div><div class="why" id="x-why" hidden></div><button class="btn pri" data-act="x-save">' + ic('out') + '<span id="x-btn">Xác nhận xuất</span></button>';
       preview();
+    };
+    const block = (btn, why, label) => {
+      btn.disabled = true; $('#x-btn').textContent = label || 'Xác nhận xuất';
+      const w = $('#x-why', sh.foot); w.hidden = false; w.innerHTML = ic('info') + '<span>' + esc(why) + '</span>';
     };
     const preview = () => {
       const it = S.items[f.itemId]; if (!it) return;
-      const box = $('#x-prev', sh.body), btn = $('[data-act="x-save"]', sh.foot);
-      const q = K.parseQty(f.qty);
-      if (!f.locId) { box.innerHTML = '<div class="notice info">' + ic('info') + '<div>Chọn vị trí lấy hàng ở trên.</div></div>'; btn.disabled = true; return; }
-      const have = K.qtyAt(D, it.id, f.locId), T = D.total[it.id], u = esc(unitOf(it));
-      if (!Number.isFinite(q) || q <= 0) { box.innerHTML = '<div class="preview"><span class="k">Đang có tại vị trí</span><span class="v num">' + K.fmtQty(have) + ' ' + u + '</span></div>'; btn.disabled = true; $('#x-btn').textContent = 'Xác nhận xuất'; return; }
-      const bad = q > have + 1e-9;
-      box.innerHTML = '<div class="preview' + (bad ? ' bad' : '') + '">' +
-        (bad ? '<span class="k" style="grid-column:1/-1;color:var(--danger);font-weight:650">Vượt quá số lượng: vị trí này chỉ còn ' + K.fmtQty(have) + ' ' + u + '.</span>'
-          : '<span class="k">Còn lại tại vị trí</span><span class="v num">' + K.fmtQty(have) + ' <span class="arrow">→</span> ' + K.fmtQty(K.r6(have - q)) + ' ' + u + '</span>' +
-          '<span class="k">Tổng tồn dự kiến</span><span class="v num">' + K.fmtQty(T) + ' <span class="arrow">→</span> ' + K.fmtQty(K.r6(T - q)) + ' ' + u + '</span>' +
-          (K.r6(T - q) === 0 ? '<span class="k" style="grid-column:1/-1">Mặt hàng sẽ chuyển sang “Đã xuất hết” và vẫn giữ trong lịch sử.</span>' : '') +
-          (f.reason === 'cho_muon' ? '<span class="k">Đang cho mượn sau khi xuất</span><span class="v num" style="color:var(--loan)">' + K.fmtQty(K.r6((D.loaned[it.id] || 0) + q)) + ' ' + u + '</span>' : '')) + '</div>';
-      btn.disabled = bad;
-      $('#x-btn').textContent = bad ? 'Không đủ hàng' : 'Xác nhận xuất ' + K.fmtQty(q) + ' ' + unitOf(it);
+      const box = $('#x-after', sh.body), btn = $('[data-act="x-save"]', sh.foot), w = $('#x-why', sh.foot);
+      const q = K.parseQty(f.qty), u = esc(unitOf(it));
+      if (!f.locId) { box.innerHTML = ''; return block(btn, 'Chọn vị trí lấy hàng ở trên.'); }
+      const have = K.qtyAt(D, it.id, f.locId), T = D.total[it.id], many = locsOf().length > 1;
+      if (!Number.isFinite(q) || q <= 0) {
+        box.className = 'after'; box.innerHTML = '<span>Đang có ' + (many ? 'tại vị trí này ' : '') + '<b class="num">' + K.fmtQty(have) + ' ' + u + '</b></span>';
+        return block(btn, f.qty === '' ? 'Nhập số lượng cần xuất.' : 'Số lượng phải lớn hơn 0.');
+      }
+      if (q > have + 1e-9) {
+        box.className = 'after bad'; box.innerHTML = ic('alert') + '<span>Vượt quá số đang có: ' + (many ? 'vị trí này ' : '') + 'chỉ còn ' + K.fmtQty(have) + ' ' + u + '</span>';
+        return block(btn, 'Giảm số lượng xuống tối đa ' + K.fmtQty(have) + ' ' + unitOf(it) + '.', 'Không đủ hàng');
+      }
+      const left = K.r6(T - q);
+      box.className = 'after';
+      box.innerHTML = '<span>Sau khi xuất: còn <b class="num">' + K.fmtQty(left) + ' ' + u + '</b></span>' +
+        (many ? '<span class="sub2">Tại vị trí này còn ' + K.fmtQty(K.r6(have - q)) + ' ' + u + '</span>' : '') +
+        (left === 0 ? '<span class="sub2">Mặt hàng sẽ chuyển sang “Đã xuất hết” và vẫn giữ trong lịch sử</span>' : '') +
+        (f.reason === 'cho_muon' ? '<span class="sub2">Đang cho mượn sau khi xuất: ' + K.fmtQty(K.r6((D.loaned[it.id] || 0) + q)) + ' ' + u + '</span>' : '');
+      btn.disabled = false; w.hidden = true;
+      $('#x-btn').textContent = 'Xác nhận xuất ' + K.fmtQty(q) + ' ' + unitOf(it);
     };
     draw();
     bindSteppers(sh.body, () => { f.qty = $('#x-qty', sh.body).value; preview(); });
@@ -801,12 +890,10 @@
       if (e.target.closest('[data-act="x-all"]')) { if (!f.locId) return sh.err('Hãy chọn vị trí lấy hàng trước.'); f.qty = String(K.qtyAt(D, f.itemId, f.locId)); $('#x-qty', sh.body).value = f.qty; preview(); }
     });
     sh.foot.addEventListener('click', async e => {
-      const b = e.target.closest('[data-act="x-save"]'); if (!b) return;
-      const res = K.ops.xuat(S, D, { itemId: f.itemId, locId: f.locId, qty: f.qty, reason: f.reason, recipient: f.reason === 'su_dung' ? '' : f.recipient, date: f.date, note: f.note });
+      const b = e.target.closest('[data-act="x-save"]'); if (!b || b.disabled) return;
+      const res = K.ops.xuat(S, D, { itemId: f.itemId, locId: f.locId, qty: f.qty, reason: f.reason, recipient: f.recipient, date: f.date, note: f.note });
       if (!res.ok) return sh.err(res.error);
-      b.disabled = true;
       const ok = await safe(() => commit({ movements: [res.movement] }));
-      b.disabled = false;
       if (ok === false) return;
       const it = S.items[f.itemId], m = res.movement;
       sh.close(); refresh();
@@ -844,8 +931,8 @@
         '<div class="notice info">' + ic('info') + '<div>Chuyển vị trí chỉ đổi chỗ cất trong kho, tổng tồn không đổi. Muốn đưa hàng ra ngoài, dùng Xuất kho → “Chuyển đi”.</div></div>' +
         '<div class="field"><span class="flabel">Từ vị trí</span>' + locOptions(itemId, f.from, 'cfrom') + '</div>' +
         '<div class="field"><span class="flabel">Đến vị trí</span><button type="button" class="pick" data-act="pickto">' + ic('pin') + '<span class="p">' + (f.to ? esc(L(f.to)) : '<span style="color:var(--muted)">Chọn hoặc tạo vị trí đích</span>') + '</span>' + ic('chev', 'chev') + '</button></div>' +
-        '<div class="field"><span class="flabel">Số lượng chuyển <span class="opt">' + esc(unitOf(it)) + '</span></span>' + stepper('c-qty', f.qty, '<button type="button" class="all" style="background:var(--primary-soft);color:var(--primary)" data-act="c-all">Tất cả</button>') + '</div>' +
-        '<div class="grid2"><div class="field"><label for="c-date">Ngày</label><input class="inp" type="date" id="c-date" value="' + f.date + '"></div><div class="field"><label for="c-note">Ghi chú</label><input class="inp" id="c-note" value="' + esc(f.note) + '" autocomplete="off"></div></div><div id="c-prev"></div>';
+        '<div class="field"><div class="flabel"><span>Số lượng chuyển <span class="opt">' + esc(unitOf(it)) + '</span></span><button type="button" class="pill" data-act="c-all">Chuyển tất cả</button></div>' + stepper('c-qty', f.qty) + '</div>' +
+        dateInput('c-date', 'Ngày', f.date) + '<div class="field"><label for="c-note">Ghi chú <span class="opt">không bắt buộc</span></label><div class="ifield">' + ic('note') + '<input class="inp" id="c-note" value="' + esc(f.note) + '" autocomplete="off" placeholder="Nhập ghi chú…"></div></div><div id="c-prev"></div>';
       sh.foot.innerHTML = '<div class="ferr" hidden></div><button class="btn pri" data-act="c-save">' + ic('move') + 'Xác nhận chuyển</button>';
       preview();
     };
@@ -932,9 +1019,9 @@
     const draw = () => {
       sh.body.innerHTML = itemCard(it) +
         '<div class="preview"><span class="k">Người mượn</span><span class="v">' + esc(loan.recipient || 'Chưa ghi') + '</span><span class="k">Ngày mượn</span><span class="v num">' + K.fmtDate(loan.date) + '</span><span class="k">Còn đang giữ</span><span class="v num" style="color:var(--loan)">' + K.fmtQty(loan.outstanding) + ' ' + esc(unitOf(it)) + '</span></div>' +
-        '<div class="field"><span class="flabel">Số lượng nhận lại</span>' + stepper('r-qty', f.qty, '<button type="button" class="all" style="background:var(--in-soft);color:var(--in)" data-act="r-all">Nhận đủ</button>') + '</div>' +
+        '<div class="field"><div class="flabel"><span>Số lượng nhận lại</span><button type="button" class="pill" data-act="r-all">Nhận đủ</button></div>' + stepper('r-qty', f.qty) + '</div>' +
         locButton('r-loc', f.locId, 'Cất lại vào vị trí') +
-        '<div class="grid2"><div class="field"><label for="r-date">Ngày nhận</label><input class="inp" type="date" id="r-date" value="' + f.date + '"></div><div class="field"><label for="r-note">Ghi chú</label><input class="inp" id="r-note" value="' + esc(f.note) + '" autocomplete="off"></div></div><div id="r-prev"></div>';
+        dateInput('r-date', 'Ngày nhận', f.date) + '<div class="field"><label for="r-note">Ghi chú <span class="opt">không bắt buộc</span></label><div class="ifield">' + ic('note') + '<input class="inp" id="r-note" value="' + esc(f.note) + '" autocomplete="off" placeholder="Nhập ghi chú…"></div></div><div id="r-prev"></div>';
       sh.foot.innerHTML = '<div class="ferr" hidden></div><button class="btn pri" data-act="r-save">' + ic('ret') + 'Xác nhận nhận lại</button>';
       preview();
     };
@@ -1042,25 +1129,42 @@
   }
 
   /* ================= BỘ LỌC ================= */
+  function pickOption(o) {
+    const sh = openSheet({ title: o.title, foot: false });
+    sh.body.innerHTML = o.options.length ? '<div class="card opt-list">' + o.options.map(([v, l, sub]) => '<button type="button" class="loc-opt' + (o.current === v ? ' on' : '') + '" data-ov="' + esc(v) + '">' + ic(o.icon || 'tag') + '<span class="p">' + esc(l) + (sub ? '<small>' + esc(sub) + '</small>' : '') + '</span>' + (o.current === v ? ic('check', 'ck') : '') + '</button>').join('') + '</div>' + (o.options.length < 2 && o.empty ? '<p class="hint">' + esc(o.empty) + '</p>' : '') : '';
+    sh.body.addEventListener('click', e => { const b = e.target.closest('[data-ov]'); if (!b) return; sh.close(); o.onPick(b.dataset.ov); });
+  }
+  function dateRangeChips() {
+    return '<div class="wrapchips">' + [['7', '7 ngày'], ['30', '30 ngày'], ['m', 'Tháng này'], ['y', 'Năm nay']].map(([k, l]) => '<button type="button" class="chip" data-range="' + k + '">' + l + '</button>').join('') + '</div>';
+  }
+  function bindDateRange(sh, fromId, toId) {
+    sh.body.addEventListener('click', e => {
+      const r = e.target.closest('[data-range]'); if (!r) return;
+      const now = new Date(); let from;
+      if (r.dataset.range === 'm') from = new Date(now.getFullYear(), now.getMonth(), 1);
+      else if (r.dataset.range === 'y') from = new Date(now.getFullYear(), 0, 1);
+      else from = new Date(Date.now() - (Number(r.dataset.range) - 1) * 864e5);
+      $('#' + fromId, sh.body).value = K.todayISO(from); $('#' + toId, sh.body).value = K.todayISO(now);
+      $$('[data-range]', sh.body).forEach(c => c.classList.toggle('on', c === r));
+    });
+  }
+  function dateInput(id, label, val) {
+    return '<div class="field"><label for="' + id + '">' + label + '</label><div class="ifield date">' + ic('cal') + '<input class="inp" type="date" id="' + id + '" value="' + (val || '') + '"></div></div>';
+  }
   function sheetItemFilter() {
-    const sh = openSheet({ title: 'Bộ lọc hàng hóa' });
-    const f = Object.assign({}, ui.items);
-    const cats = Object.values(S.categories).sort((a, b) => (a.order || 0) - (b.order || 0));
-    const pref = K.locationPrefixes(S);
-    sh.body.innerHTML =
-      '<div class="field"><label for="ff-cat">Loại hàng</label><select class="inp" id="ff-cat"><option value="">Tất cả loại</option>' + cats.map(c => '<option value="' + c.id + '"' + (f.categoryId === c.id ? ' selected' : '') + '>' + esc(c.name) + '</option>').join('') + '<option value="__none"' + (f.categoryId === '__none' ? ' selected' : '') + '>Chưa phân loại</option></select></div>' +
-      '<div class="field"><label for="ff-loc">Vị trí <span class="opt">gồm cả các cấp bên trong</span></label><select class="inp" id="ff-loc"><option value="">Mọi vị trí</option>' + pref.map(p => '<option value="' + esc(p.key) + '"' + (f.locPrefix === p.key ? ' selected' : '') + '>' + '  '.repeat(p.depth - 1) + esc(p.label) + '</option>').join('') + '</select></div>' +
-      '<div class="flabel">Khoảng ngày nhập</div><div class="grid2"><div class="field"><label for="ff-from">Từ ngày</label><input class="inp" type="date" id="ff-from" value="' + f.from + '"></div><div class="field"><label for="ff-to">Đến ngày</label><input class="inp" type="date" id="ff-to" value="' + f.to + '"></div></div>' +
-      '<div class="field"><span class="flabel">Trạng thái</span><div class="wrapchips">' + [['con', 'Còn hàng'], ['het', 'Đã xuất hết'], ['all', 'Tất cả']].map(([k, l]) => '<button type="button" class="chip' + (f.status === k ? ' on' : '') + '" data-st="' + k + '">' + l + '</button>').join('') + '</div></div>';
-    sh.foot.innerHTML = '<div class="btn-row"><button class="btn ghost" data-act="ff-clear" style="flex:0 0 40%">Xóa bộ lọc</button><button class="btn pri" data-act="ff-apply">Áp dụng</button></div>';
-    sh.body.addEventListener('click', e => { const s = e.target.closest('[data-st]'); if (s) { f.status = s.dataset.st; $$('[data-st]', sh.body).forEach(c => c.classList.toggle('on', c === s)); } });
+    const sh = openSheet({ title: 'Lọc theo ngày nhập' });
+    const f = ui.items;
+    sh.body.innerHTML = '<p class="hint" style="margin:0">Hiện các mặt hàng có ít nhất một đợt nhập trong khoảng này.</p>' + dateRangeChips() +
+      dateInput('ff-from', 'Từ ngày', f.from) + dateInput('ff-to', 'Đến ngày', f.to);
+    sh.foot.innerHTML = '<div class="btn-row"><button class="btn ghost" data-act="ff-clear" style="flex:0 0 40%">Bỏ lọc ngày</button><button class="btn pri" data-act="ff-apply">Áp dụng</button></div>';
+    bindDateRange(sh, 'ff-from', 'ff-to');
     sh.foot.addEventListener('click', e => {
       const a = e.target.closest('[data-act]'); if (!a) return;
-      if (a.dataset.act === 'ff-clear') Object.assign(ui.items, { categoryId: '', locPrefix: '', from: '', to: '' });
+      if (a.dataset.act === 'ff-clear') Object.assign(ui.items, { from: '', to: '' });
       else {
         const from = $('#ff-from', sh.body).value, to = $('#ff-to', sh.body).value;
         if (from && to && from > to) return toast('Ngày bắt đầu phải trước ngày kết thúc.', 'err');
-        Object.assign(ui.items, { categoryId: $('#ff-cat', sh.body).value, locPrefix: $('#ff-loc', sh.body).value, from, to, status: f.status });
+        Object.assign(ui.items, { from, to });
       }
       sh.close(); refresh();
     });
@@ -1070,17 +1174,10 @@
     const items = Object.values(S.items).sort((a, b) => a.name.localeCompare(b.name, 'vi'));
     const f = ui.hist;
     sh.body.innerHTML = '<div class="field"><label for="hf-item">Mặt hàng</label><select class="inp" id="hf-item"><option value="">Tất cả mặt hàng</option>' + items.map(i => '<option value="' + i.id + '"' + (f.itemId === i.id ? ' selected' : '') + '>' + esc(i.name) + ' (' + esc(i.code) + ')</option>').join('') + '</select></div>' +
-      '<div class="flabel">Khoảng thời gian</div><div class="wrapchips">' + [['7', '7 ngày'], ['30', '30 ngày'], ['m', 'Tháng này'], ['y', 'Năm nay']].map(([k, l]) => '<button type="button" class="chip" data-range="' + k + '">' + l + '</button>').join('') + '</div>' +
-      '<div class="grid2"><div class="field"><label for="hf-from">Từ ngày</label><input class="inp" type="date" id="hf-from" value="' + f.from + '"></div><div class="field"><label for="hf-to">Đến ngày</label><input class="inp" type="date" id="hf-to" value="' + f.to + '"></div></div>';
+      '<div class="flabel">Khoảng thời gian</div>' + dateRangeChips() +
+      dateInput('hf-from', 'Từ ngày', f.from) + dateInput('hf-to', 'Đến ngày', f.to);
     sh.foot.innerHTML = '<div class="btn-row"><button class="btn ghost" data-act="hf-clear" style="flex:0 0 40%">Xóa bộ lọc</button><button class="btn pri" data-act="hf-apply">Áp dụng</button></div>';
-    sh.body.addEventListener('click', e => {
-      const r = e.target.closest('[data-range]'); if (!r) return;
-      const now = new Date(); let from;
-      if (r.dataset.range === 'm') from = new Date(now.getFullYear(), now.getMonth(), 1);
-      else if (r.dataset.range === 'y') from = new Date(now.getFullYear(), 0, 1);
-      else from = new Date(Date.now() - (Number(r.dataset.range) - 1) * 864e5);
-      $('#hf-from', sh.body).value = K.todayISO(from); $('#hf-to', sh.body).value = K.todayISO(now);
-    });
+    bindDateRange(sh, 'hf-from', 'hf-to');
     sh.foot.addEventListener('click', e => {
       const a = e.target.closest('[data-act]'); if (!a) return;
       if (a.dataset.act === 'hf-clear') Object.assign(ui.hist, { itemId: '', from: '', to: '' });
@@ -1280,10 +1377,18 @@
       $('#view').innerHTML = '<div class="wrap" style="padding-top:calc(var(--sat) + 40px)"><div class="notice danger">' + ic('alert') + '<div><b>Không mở được bộ nhớ của ứng dụng.</b><br>' + esc(e.message || e) + '<br>Nếu đang dùng chế độ Duyệt web riêng tư, hãy mở bằng tab thường hoặc từ màn hình chính.</div></div></div>';
       return;
     }
+    bindUX();
     bindGlobal();
     render();
     if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
+      const hadController = !!navigator.serviceWorker.controller;
       navigator.serviceWorker.register('sw.js').catch(() => { });
+      // Khi có phiên bản mới: tải lại nếu không có biểu mẫu đang mở, nếu không thì hỏi
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!hadController) return;
+        if (!sheets.length) location.reload();
+        else toast('Đã có bản cập nhật giao diện', 'ok', { label: 'Tải lại', run: () => location.reload() });
+      });
     }
     if (Object.keys(S.items).length) DB.persist();
   }
