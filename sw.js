@@ -1,7 +1,7 @@
 /* Kho Của Tôi — service worker: lưu sẵn giao diện để mở được khi không có mạng.
  * Dữ liệu người dùng nằm trong IndexedDB, không nằm trong bộ đệm này, nên cập nhật giao diện không đụng tới dữ liệu.
  * Chiến lược: có mạng thì lấy bản mới nhất (bỏ qua bộ đệm HTTP), mất mạng hoặc mạng quá chậm thì dùng bản đã lưu. */
-const CACHE = 'kho-cua-toi-v1.1.0';
+const CACHE = 'kho-cua-toi-v1.2.0';
 const FILES = ['./', 'index.html', 'core.js', 'db.js', 'xlsx.js', 'app.js', 'manifest.webmanifest',
   'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 

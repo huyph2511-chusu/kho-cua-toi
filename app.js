@@ -2,57 +2,62 @@
 (function () {
   'use strict';
   const K = KhoCore, DB = KhoDB;
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
   let S = null, D = null, saving = false, lastBtn = null;
+  let KHOS = [], ACTIVE = null; // danh sách kho và kho đang mở
 
   /* ================= tiện ích ================= */
   const $ = (s, r) => (r || document).querySelector(s);
   const $$ = (s, r) => Array.from((r || document).querySelectorAll(s));
   const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  // Bộ biểu tượng mềm: nét bo tròn 1,75 px, góc mềm, lớp màu nhạt bên trong (duo)
   const IC = {
-    home: '<path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',
-    box: '<path d="M21 8 12 3 3 8v8l9 5 9-5z"/><path d="m3 8 9 5 9-5M12 13v8"/>',
-    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-    gear: '<path d="M4 6h9M17 6h3M4 12h3M11 12h9M4 18h11M19 18h1"/><circle cx="15" cy="6" r="2"/><circle cx="9" cy="12" r="2"/><circle cx="17" cy="18" r="2"/>',
-    search: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/>',
-    in: '<path d="M12 3v10m0 0-4-4m4 4 4-4"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
-    out: '<path d="M12 14V4m0 0L8 8m4-4 4 4"/><path d="M4 14v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4"/>',
-    pin: '<path d="M12 21s-7-6.2-7-11.5A7 7 0 0 1 19 9.5C19 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
-    move: '<path d="M7 7h12m0 0-3-3m3 3-3 3M17 17H5m0 0 3-3m-3 3 3 3"/>',
-    count: '<path d="M10 6h10M10 12h10M10 18h10"/><path d="m3.5 6 1.2 1.2L7 5M3.5 12l1.2 1.2L7 11M3.5 18l1.2 1.2L7 17"/>',
-    undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
-    ret: '<path d="M20 12a8 8 0 1 1-2.3-5.6"/><path d="M20 4v5h-5"/>',
-    plus: '<path d="M12 5v14M5 12h14"/>',
-    x: '<path d="M6 6l12 12M18 6 6 18"/>',
-    back: '<path d="m15 18-6-6 6-6"/>',
-    chev: '<path d="m9 6 6 6-6 6"/>',
-    edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="m13.5 6.5 4 4"/>',
-    camera: '<path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z"/><circle cx="12" cy="13.5" r="3.5"/>',
-    image: '<rect x="3" y="4" width="18" height="16" rx="2"/><circle cx="9" cy="10" r="2"/><path d="m21 16-5-5-9 9"/>',
-    tag: '<path d="M3 12V4h8l10 10-8 8z"/><circle cx="7.5" cy="8.5" r="1.5"/>',
-    user: '<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>',
-    check: '<path d="m5 12 5 5 9-10"/>',
-    alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17.5v.01"/>',
-    info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5v.01"/>',
-    save: '<path d="M12 4v11m0 0-4-4m4 4 4-4"/><path d="M5 20h14"/>',
-    restore: '<path d="M12 16V5m0 0L8 9m4-4 4 4"/><path d="M5 20h14"/>',
-    table: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/>',
-    book: '<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2z"/><path d="M4 21V5M8 7h7"/>',
-    trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
-    filter: '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
-    unit: '<path d="M5 9h14M5 15h14M10 4 8 20M16 4l-2 16"/>',
-    disk: '<ellipse cx="12" cy="6" rx="8" ry="3"/><path d="M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3"/>',
-    zoom: '<circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5M11 8v6M8 11h6"/>',
-    house: '<path d="M3 21V9l9-5 9 5v12"/><path d="M7 21v-8h10v8M7 17h10"/>',
-    coin: '<circle cx="12" cy="12" r="9"/><path d="M14.5 9.5c-.4-1-1.4-1.5-2.5-1.5-1.5 0-2.5.8-2.5 2s1 1.7 2.5 2 2.5.8 2.5 2-1 2-2.5 2c-1.2 0-2.2-.6-2.6-1.6M12 6.5V8m0 8v1.5"/>',
-    phone: '<rect x="7" y="2.5" width="10" height="19" rx="2.5"/><path d="M11 18.5h2"/>',
-    cal: '<rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/><path d="M3.5 10h17M8 3v4M16 3v4"/>',
-    note: '<path d="M6 3h9l4 4v14H6z"/><path d="M9 11h7M9 15h7M9 7h3"/>',
-    chevd: '<path d="m6 9 6 6 6-6"/>',
-    minus: '<path d="M5 12h14"/>',
-    sort: '<path d="M7 4v16m0 0-3-3m3 3 3-3M17 20V4m0 0-3 3m3-3 3 3"/>'
+    home: ['M4 10.4c0-.6.3-1.2.8-1.6l6-4.6a2 2 0 0 1 2.4 0l6 4.6c.5.4.8 1 .8 1.6V18a2.5 2.5 0 0 1-2.5 2.5h-2.7v-4.7a1.5 1.5 0 0 0-1.5-1.5h-2.6a1.5 1.5 0 0 0-1.5 1.5v4.7H6.5A2.5 2.5 0 0 1 4 18z', 'M4 10.4c0-.6.3-1.2.8-1.6l6-4.6a2 2 0 0 1 2.4 0l6 4.6c.5.4.8 1 .8 1.6V18a2.5 2.5 0 0 1-2.5 2.5H6.5A2.5 2.5 0 0 1 4 18z'],
+    box: ['M10.9 3.6a2.4 2.4 0 0 1 2.2 0l5.8 3.1c.7.4 1.1 1.1 1.1 1.9v6.8c0 .8-.4 1.5-1.1 1.9l-5.8 3.1a2.4 2.4 0 0 1-2.2 0l-5.8-3.1A2.2 2.2 0 0 1 4 15.4V8.6c0-.8.4-1.5 1.1-1.9z M4.4 7.6 12 11.8l7.6-4.2 M12 11.8v8.8', 'M10.9 3.6a2.4 2.4 0 0 1 2.2 0l6.5 4L12 11.8 4.4 7.6z'],
+    clock: ['M3.5 12a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0-17 0 M12 7.8V12l2.8 1.8', 'M3.5 12a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0-17 0'],
+    gear: ['M7.5 4.5h9a3.5 3.5 0 0 1 0 7h-9a3.5 3.5 0 0 1 0-7z M7.5 12.5h9a3.5 3.5 0 0 1 0 7h-9a3.5 3.5 0 0 1 0-7z M14.2 8a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0-3.6 0 M6.2 16a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0-3.6 0', 'M14.2 8a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0-3.6 0 M6.2 16a1.8 1.8 0 1 0 3.6 0a1.8 1.8 0 1 0-3.6 0'],
+    search: ['M4.5 11a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0-13 0 M16 16l3.8 3.8', 'M4.5 11a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0-13 0'],
+    in: ['M12 4v9 M8.5 10 12 13.5 15.5 10 M4 13.5v2.7A3.8 3.8 0 0 0 7.8 20h8.4a3.8 3.8 0 0 0 3.8-3.8v-2.7', 'M4 15.5h16v.7A3.8 3.8 0 0 1 16.2 20H7.8A3.8 3.8 0 0 1 4 16.2z'],
+    out: ['M12 13.5V4.5 M8.5 8 12 4.5 15.5 8 M4 13.5v2.7A3.8 3.8 0 0 0 7.8 20h8.4a3.8 3.8 0 0 0 3.8-3.8v-2.7', 'M4 15.5h16v.7A3.8 3.8 0 0 1 16.2 20H7.8A3.8 3.8 0 0 1 4 16.2z'],
+    pin: ['M12 20.5c-.3 0-.6-.1-.8-.3C8.6 17.8 5.5 14.4 5.5 10.4a6.5 6.5 0 0 1 13 0c0 4-3.1 7.4-5.7 9.8-.2.2-.5.3-.8.3z M9.7 10.2a2.3 2.3 0 1 0 4.6 0a2.3 2.3 0 1 0-4.6 0', 'M12 20.5c-.3 0-.6-.1-.8-.3C8.6 17.8 5.5 14.4 5.5 10.4a6.5 6.5 0 0 1 13 0c0 4-3.1 7.4-5.7 9.8-.2.2-.5.3-.8.3z'],
+    move: ['M5 8.5h12 M14 5.3l3.2 3.2-3.2 3.2 M19 15.5H7 M10 12.3l-3.2 3.2 3.2 3.2', ''],
+    count: ['M5 7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5v10a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 17.5z M9.5 3.5h5a1 1 0 0 1 1 1v1a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-1a1 1 0 0 1 1-1z M9 13l2 2 4-4', 'M5 7.5A2.5 2.5 0 0 1 7.5 5h9A2.5 2.5 0 0 1 19 7.5v10a2.5 2.5 0 0 1-2.5 2.5h-9A2.5 2.5 0 0 1 5 17.5z'],
+    undo: ['M9 6.5 5 10.5l4 4 M5.5 10.5h8.2a5 5 0 0 1 0 10H11', ''],
+    ret: ['M19.5 12a7.5 7.5 0 1 1-2.2-5.3 M19.5 4.5v4h-4', ''],
+    plus: ['M12 6v12 M6 12h12', ''],
+    x: ['M7 7l10 10 M17 7 7 17', ''],
+    back: ['M14.5 6.5 9 12l5.5 5.5', ''],
+    chev: ['M9.5 6.5 15 12l-5.5 5.5', ''],
+    edit: ['M14.6 5.6a2.1 2.1 0 0 1 3 0l.8.8a2.1 2.1 0 0 1 0 3L9.3 18.5 5 19.5l1-4.3z M13 7.2l3.8 3.8', 'M14.6 5.6a2.1 2.1 0 0 1 3 0l.8.8a2.1 2.1 0 0 1 0 3L9.3 18.5 5 19.5l1-4.3z'],
+    camera: ['M4 9.5A2.5 2.5 0 0 1 6.5 7h1.3l1.1-1.7c.3-.5.8-.8 1.4-.8h3.4c.6 0 1.1.3 1.4.8L16.2 7h1.3A2.5 2.5 0 0 1 20 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z M8.8 13a3.2 3.2 0 1 0 6.4 0a3.2 3.2 0 1 0-6.4 0', 'M4 9.5A2.5 2.5 0 0 1 6.5 7h1.3l1.1-1.7c.3-.5.8-.8 1.4-.8h3.4c.6 0 1.1.3 1.4.8L16.2 7h1.3A2.5 2.5 0 0 1 20 9.5v7a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 16.5z'],
+    image: ['M4 7A3 3 0 0 1 7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z M4.5 16.5l4-4a2 2 0 0 1 2.8 0l5.2 5.2 M14 14.5l1.3-1.3a2 2 0 0 1 2.8 0l1.6 1.6 M13.5 8.8a1.3 1.3 0 1 0 2.6 0a1.3 1.3 0 1 0-2.6 0', 'M4 7A3 3 0 0 1 7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z'],
+    tag: ['M4 6.5A2.5 2.5 0 0 1 6.5 4h4.6c.7 0 1.3.3 1.8.7l6.4 6.4a2.5 2.5 0 0 1 0 3.6l-4.4 4.4a2.5 2.5 0 0 1-3.6 0l-6.4-6.4A2.5 2.5 0 0 1 4 11.1z M8 8.5a.9.9 0 1 0 1.8 0a.9.9 0 1 0-1.8 0', 'M4 6.5A2.5 2.5 0 0 1 6.5 4h4.6c.7 0 1.3.3 1.8.7l6.4 6.4a2.5 2.5 0 0 1 0 3.6l-4.4 4.4a2.5 2.5 0 0 1-3.6 0l-6.4-6.4A2.5 2.5 0 0 1 4 11.1z'],
+    user: ['M8.3 8a3.7 3.7 0 1 0 7.4 0a3.7 3.7 0 1 0-7.4 0 M5 19.2c.8-3 3.6-4.7 7-4.7s6.2 1.7 7 4.7c.2.7-.4 1.3-1.1 1.3H6.1c-.7 0-1.3-.6-1.1-1.3z', 'M8.3 8a3.7 3.7 0 1 0 7.4 0a3.7 3.7 0 1 0-7.4 0'],
+    users: ['M5.7 8.3a3.3 3.3 0 1 0 6.6 0a3.3 3.3 0 1 0-6.6 0 M3 18.6c.6-2.6 3-4.1 6-4.1s5.4 1.5 6 4.1c.2.6-.3 1.2-1 1.2H4c-.7 0-1.2-.6-1-1.2z M15 5.2a3.2 3.2 0 0 1 0 6.2 M17.2 14.7c1.7.5 2.9 1.6 3.3 3.3.1.6-.3 1.1-.9 1.1h-1.3', 'M5.7 8.3a3.3 3.3 0 1 0 6.6 0a3.3 3.3 0 1 0-6.6 0'],
+    check: ['M6 12.5l4 4 8-9', ''],
+    alert: ['M10.3 5.2a2 2 0 0 1 3.4 0l6.6 11.5a2 2 0 0 1-1.7 3H5.4a2 2 0 0 1-1.7-3z M12 10v3.5 M12 16.6v.1', 'M10.3 5.2a2 2 0 0 1 3.4 0l6.6 11.5a2 2 0 0 1-1.7 3H5.4a2 2 0 0 1-1.7-3z'],
+    info: ['M3.5 12a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0-17 0 M12 11v5 M12 7.9v.1', 'M3.5 12a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0-17 0'],
+    save: ['M7.5 18.5h9.3a4 4 0 0 0 .6-8 5.5 5.5 0 0 0-10.7 1.3A3.4 3.4 0 0 0 7.5 18.5z M12 16v-5 M9.8 13.2 12 11l2.2 2.2', 'M7.5 18.5h9.3a4 4 0 0 0 .6-8 5.5 5.5 0 0 0-10.7 1.3A3.4 3.4 0 0 0 7.5 18.5z'],
+    restore: ['M7.5 18.5h9.3a4 4 0 0 0 .6-8 5.5 5.5 0 0 0-10.7 1.3A3.4 3.4 0 0 0 7.5 18.5z M12 11v5 M9.8 13.8 12 16l2.2-2.2', 'M7.5 18.5h9.3a4 4 0 0 0 .6-8 5.5 5.5 0 0 0-10.7 1.3A3.4 3.4 0 0 0 7.5 18.5z'],
+    table: ['M4 7A3 3 0 0 1 7 4h10a3 3 0 0 1 3 3v10a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3z M4 9.5h16 M9.5 9.5V20', 'M4 7A3 3 0 0 1 7 4h10a3 3 0 0 1 3 3v2.5H4z'],
+    book: ['M5 5.5A2.5 2.5 0 0 1 7.5 3H18a1 1 0 0 1 1 1v13.5a1 1 0 0 1-1 1H7.5A2.5 2.5 0 0 0 5 21z M5 21a2.5 2.5 0 0 1 2.5-2.5H19 M9 7.5h6', 'M5 5.5A2.5 2.5 0 0 1 7.5 3H18a1 1 0 0 1 1 1v13.5a1 1 0 0 1-1 1H7.5A2.5 2.5 0 0 0 5 21z'],
+    trash: ['M5 7h14 M9.5 7V5.5A1.5 1.5 0 0 1 11 4h2a1.5 1.5 0 0 1 1.5 1.5V7 M6.5 7l.8 11a2 2 0 0 0 2 1.9h5.4a2 2 0 0 0 2-1.9l.8-11 M10.5 11v5 M13.5 11v5', 'M6.5 7h11l-.8 11a2 2 0 0 1-2 1.9H9.3a2 2 0 0 1-2-1.9z'],
+    filter: ['M4.5 5.5A1.5 1.5 0 0 1 6 4h12a1.5 1.5 0 0 1 1.1 2.5L14 12.3V18a1 1 0 0 1-.6.9l-2.5 1.2a1 1 0 0 1-1.4-.9v-6.9L4.9 6.5a1.5 1.5 0 0 1-.4-1z', 'M4.5 5.5A1.5 1.5 0 0 1 6 4h12a1.5 1.5 0 0 1 1.1 2.5L14 12.3V18a1 1 0 0 1-.6.9l-2.5 1.2a1 1 0 0 1-1.4-.9v-6.9L4.9 6.5a1.5 1.5 0 0 1-.4-1z'],
+    unit: ['M4.5 15.5 15.5 4.5a1.8 1.8 0 0 1 2.5 0l1.5 1.5a1.8 1.8 0 0 1 0 2.5L8.5 19.5a1.8 1.8 0 0 1-2.5 0L4.5 18a1.8 1.8 0 0 1 0-2.5z M8 12l1.8 1.8 M11 9l1.8 1.8 M14 6l1.8 1.8', 'M4.5 15.5 15.5 4.5a1.8 1.8 0 0 1 2.5 0l1.5 1.5a1.8 1.8 0 0 1 0 2.5L8.5 19.5a1.8 1.8 0 0 1-2.5 0L4.5 18a1.8 1.8 0 0 1 0-2.5z'],
+    disk: ['M5 7c0-1.7 3.1-3 7-3s7 1.3 7 3v10c0 1.7-3.1 3-7 3s-7-1.3-7-3z M5 7c0 1.7 3.1 3 7 3s7-1.3 7-3 M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3', 'M5 7c0-1.7 3.1-3 7-3s7 1.3 7 3-3.1 3-7 3-7-1.3-7-3z'],
+    zoom: ['M4.5 11a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0-13 0 M16 16l3.8 3.8 M11 8.3v5.4 M8.3 11h5.4', 'M4.5 11a6.5 6.5 0 1 0 13 0a6.5 6.5 0 1 0-13 0'],
+    house: ['M3.5 9.6c0-.7.4-1.3 1-1.6l6.6-3.4a2 2 0 0 1 1.8 0L19.5 8c.6.3 1 .9 1 1.6V18a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z M7.5 20v-6.5h9V20 M7.5 16.8h9', 'M3.5 9.6c0-.7.4-1.3 1-1.6l6.6-3.4a2 2 0 0 1 1.8 0L19.5 8c.6.3 1 .9 1 1.6V18a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z'],
+    coin: ['M3.5 12a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0-17 0 M14.3 9.6c-.4-.9-1.3-1.4-2.3-1.4-1.4 0-2.4.8-2.4 1.9s.9 1.6 2.4 1.9 2.4.8 2.4 1.9-1 2-2.4 2c-1.1 0-2-.6-2.4-1.5 M12 6.8v1.4 M12 15.8v1.4', 'M3.5 12a8.5 8.5 0 1 0 17 0a8.5 8.5 0 1 0-17 0'],
+    phone: ['M7 5.5A3 3 0 0 1 10 2.5h4a3 3 0 0 1 3 3v13a3 3 0 0 1-3 3h-4a3 3 0 0 1-3-3z M10.8 18.5h2.4', 'M7 5.5A3 3 0 0 1 10 2.5h4a3 3 0 0 1 3 3v13a3 3 0 0 1-3 3h-4a3 3 0 0 1-3-3z'],
+    cal: ['M4 8.5A3.5 3.5 0 0 1 7.5 5h9A3.5 3.5 0 0 1 20 8.5v8a3.5 3.5 0 0 1-3.5 3.5h-9A3.5 3.5 0 0 1 4 16.5z M4.2 10h15.6 M8.5 3.5v3 M15.5 3.5v3', 'M4 8.5A3.5 3.5 0 0 1 7.5 5h9A3.5 3.5 0 0 1 20 8.5V10H4z'],
+    note: ['M5.5 6.5A2.5 2.5 0 0 1 8 4h5.8c.5 0 1 .2 1.4.6l3.2 3.2c.4.4.6.9.6 1.4v8.3a2.5 2.5 0 0 1-2.5 2.5H8a2.5 2.5 0 0 1-2.5-2.5z M9 12h6 M9 15.5h4', 'M5.5 6.5A2.5 2.5 0 0 1 8 4h5.8c.5 0 1 .2 1.4.6l3.2 3.2c.4.4.6.9.6 1.4v8.3a2.5 2.5 0 0 1-2.5 2.5H8a2.5 2.5 0 0 1-2.5-2.5z'],
+    chevd: ['M6.5 9.5 12 15l5.5-5.5', ''],
+    minus: ['M6 12h12', ''],
+    sort: ['M8 5v14 M5 16l3 3 3-3 M16 19V5 M13 8l3-3 3 3', ''],
+    sun: ['M8.5 12a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0 M12 3.5v1.5 M12 19v1.5 M3.5 12H5 M19 12h1.5 M6 6l1 1 M17 17l1 1 M6 18l1-1 M17 7l1-1', 'M8.5 12a3.5 3.5 0 1 0 7 0a3.5 3.5 0 1 0-7 0'],
+    moon: ['M19.5 14.2A7.5 7.5 0 0 1 9.8 4.5a7.5 7.5 0 1 0 9.7 9.7z', 'M19.5 14.2A7.5 7.5 0 0 1 9.8 4.5a7.5 7.5 0 1 0 9.7 9.7z']
   };
-  const ic = (n, c) => '<svg class="i ' + (c || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + IC[n] + '</svg>';
+  const ic = (n, c) => { const v = IC[n] || IC.box; return '<svg class="i ' + (c || '') + '" viewBox="0 0 24 24" aria-hidden="true">' + (v[1] ? '<path class="duo" d="' + v[1] + '"/>' : '') + '<path d="' + v[0] + '"/></svg>'; };
   const TYPE_IC = { nhap: 'in', xuat: 'out', nhan_lai: 'ret', chuyen: 'move', kiemke: 'count', hoantac: 'undo' };
   const WD = ['Chủ nhật', 'Thứ hai', 'Thứ ba', 'Thứ tư', 'Thứ năm', 'Thứ sáu', 'Thứ bảy'];
 
@@ -79,10 +84,37 @@
     const ev = Object.keys(D.everLocs[it.id] || {});
     return ev.length === 1 && ev[0] !== K.NONE_LOC ? 'Từng cất: ' + L(ev[0]) : 'Không còn trong kho';
   }
+  function hashTint(str, n) { let h = 0; for (const c of String(str || '')) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % (n || 4); }
   function thumb(it, cls) {
     if (it && it.thumb) return '<img class="thumb ' + (cls || '') + '" src="' + it.thumb + '" alt="">';
     const ch = (it && it.name ? it.name.trim()[0] : '?') || '?';
-    return '<span class="thumb ' + (cls || '') + '" aria-hidden="true">' + esc(ch.toUpperCase()) + '</span>';
+    return '<span class="thumb tint' + hashTint(it && it.name) + ' ' + (cls || '') + '" aria-hidden="true">' + esc(ch.toUpperCase()) + '</span>';
+  }
+  /* ---------- kho ---------- */
+  function khoInitial(k) {
+    const words = String(k && k.name || '').trim().split(/\s+/).filter(Boolean);
+    const rest = words.filter(w => !/^(kho|của|cua)$/i.test(w));
+    const w = (rest[0] || words[0] || 'K');
+    return w[0].toUpperCase();
+  }
+  const tintOf = k => 'tint' + ((k && k.color) || 0) % 6;
+  const khoAv = (k, cls) => '<span class="kho-av ' + tintOf(k) + ' ' + (cls || '') + '" aria-hidden="true">' + esc(khoInitial(k)) + '</span>';
+  function khoChip() {
+    return '<div class="hdr-top"><button class="kho-chip" data-act="kho-switch" aria-label="Đang mở ' + esc(ACTIVE.name) + '. Chạm để chọn kho khác">' + khoAv(ACTIVE) + '<span class="nm">' + esc(ACTIVE.name) + '</span>' + ic('chevd', 'cv') + '</button></div>';
+  }
+  function khoStatsText(k) {
+    const st = k.stats;
+    if (!st) return 'Chưa mở lần nào';
+    return st.inStock + ' mặt hàng còn' + (st.outStock ? ' · ' + st.outStock + ' đã hết' : '');
+  }
+  async function saveKhoStats() {
+    if (!ACTIVE || !S) return;
+    const sm = K.summary(S, D);
+    const stats = { inStock: sm.inStock, outStock: sm.outStock, updatedAt: new Date().toISOString() };
+    const o = ACTIVE.stats || {};
+    if (o.inStock === stats.inStock && o.outStock === stats.outStock) return;
+    ACTIVE.stats = stats;
+    try { await DB.putKho(ACTIVE); } catch (e) { }
   }
   function badge(id) {
     const st = K.statusOf(D, id);
@@ -137,6 +169,7 @@
     if (c.delMovements) { const set = new Set(c.delMovements); S.movements = S.movements.filter(m => !set.has(m.id)); }
     S.movements.sort((a, b) => a.seq - b.seq);
     D = K.derive(S);
+    saveKhoStats();
   }
   async function safe(fn) {
     try { return await fn(); }
@@ -196,7 +229,7 @@
     const el = document.createElement('section'); el.className = 'sheet' + (o.full ? ' full' : '');
     el.setAttribute('role', 'dialog'); el.setAttribute('aria-modal', 'true'); el.setAttribute('aria-label', o.title);
     const head = o.full
-      ? '<div class="sh-head center"><button class="back" data-act="close" aria-label="Quay lại">' + ic('back') + '</button><h3>' + esc(o.title) + '</h3><span class="sp"></span></div>'
+      ? '<div class="sh-head center"><button class="back" data-act="close" aria-label="Quay lại">' + ic('back') + '</button><div class="sh-tt"><h3>' + esc(o.title) + '</h3>' + (ACTIVE && o.kho !== false ? '<span class="sh-sub"><i class="' + tintOf(ACTIVE) + '" style="background:var(--t' + ((ACTIVE.color || 0) % 6) + 'f)"></i>' + esc(ACTIVE.name) + '</span>' : '') + '</div><span class="sp"></span></div>'
       : '<div class="sh-head"><h3>' + esc(o.title) + '</h3><button class="x" data-act="close">' + esc(o.closeLabel || 'Đóng') + '</button></div>';
     el.innerHTML = head + '<div class="sh-body"></div>' + (o.foot === false ? '' : '<div class="sh-foot"></div>');
     $('#layers').append(bd, el);
@@ -278,7 +311,7 @@
 
   /* ================= TRANG CHỦ ================= */
   function homeHTML() {
-    return '<header class="hdr"><div class="hdr-row"><h1>Kho Của Tôi</h1></div>' +
+    return '<header class="hdr">' + khoChip() + '<div class="hdr-row"><h1>Kho Của Tôi</h1></div>' +
       '<div class="search"><span class="si">' + ic('search') + '</span><input id="home-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Tìm tên hàng, vị trí…" value="' + esc(ui.homeQ) + '" aria-label="Tìm tên hàng, mã, vị trí, ghi chú"><button class="clr" data-act="home-clear" aria-label="Xóa tìm kiếm"' + (ui.homeQ ? '' : ' hidden') + '>' + ic('x') + '</button></div>' +
       overviewHTML() + '</header><div class="wrap" id="home-body">' + homeBodyHTML() + '</div>';
   }
@@ -300,10 +333,10 @@
   function homeBodyHTML() {
     if (ui.homeQ.trim()) return homeResultsHTML();
     const has = Object.keys(S.items).length > 0;
-    let h = '<div class="big-actions"><button class="big" data-act="nhap">' + ic('in') + '<span>Nhập kho</span></button>' +
-      '<button class="big" data-act="xuat">' + ic('out') + '<span>Xuất kho</span></button></div>';
+    let h = '<div class="big-actions"><button class="big" data-act="nhap"><span class="ic">' + ic('in') + '</span><span>Nhập kho</span></button>' +
+      '<button class="big" data-act="xuat"><span class="ic">' + ic('out') + '</span><span>Xuất kho</span></button></div>';
     if (!has) {
-      return h + '<div class="card"><div class="empty"><div class="eic">' + ic('box') + '</div><h3>Kho đang trống</h3><p>Bắt đầu bằng cách nhập món đồ đầu tiên: chụp ảnh, ghi số lượng và nơi cất. Mọi thứ được lưu ngay trên iPhone này.</p><button class="btn pri" data-act="nhap">' + ic('plus') + 'Thêm mặt hàng đầu tiên</button><button class="link" data-act="guide">Xem hướng dẫn nhanh</button></div></div>' + installHint();
+      return h + '<div class="card"><div class="empty"><div class="eic">' + ic('box') + '</div><h3>“' + esc(ACTIVE.name) + '” đang trống</h3><p>Bắt đầu bằng cách nhập món đồ đầu tiên: chụp ảnh, ghi số lượng và nơi cất. Mọi thứ được lưu ngay trên iPhone này.</p><button class="btn pri" data-act="nhap">' + ic('plus') + 'Thêm mặt hàng đầu tiên</button><button class="link" data-act="guide">Xem hướng dẫn nhanh</button></div></div>' + installHint();
     }
     h += installHint() + backupReminder();
     // Gần đây: mặt hàng vừa có hoạt động, kèm số lượng và vị trí hiện tại
@@ -384,7 +417,7 @@
     const dateLabel = f.from || f.to ? (f.from ? K.fmtDate(f.from) : '…') + ' – ' + (f.to ? K.fmtDate(f.to) : '…') : 'Ngày nhập';
     const sortLabel = (SORTS.find(s => s[0] === f.sort) || SORTS[0])[1];
     const fc = (act, icn, label, set, aria) => '<button class="fchip' + (set ? ' set' : '') + '" data-act="' + act + '" aria-label="' + esc(aria) + '">' + ic(icn) + '<span>' + esc(label) + '</span>' + ic('chevd', 'cv') + '</button>';
-    return '<header class="hdr sticky compact"><div class="hdr-row"><h1>Hàng hóa</h1><button class="add-btn" data-act="nhap" aria-label="Thêm mặt hàng">' + ic('plus') + '</button></div>' +
+    return '<header class="hdr sticky compact">' + khoChip() + '<div class="hdr-row"><h1>Hàng hóa</h1><button class="add-btn" data-act="nhap" aria-label="Thêm mặt hàng">' + ic('plus') + '</button></div>' +
       '<div class="search"><span class="si">' + ic('search') + '</span><input id="items-q" type="search" enterkeyhint="search" autocomplete="off" placeholder="Tìm tên hàng, vị trí…" value="' + esc(f.q) + '" aria-label="Tìm tên hàng, mã, vị trí, ghi chú"><button class="clr" data-act="items-clear" aria-label="Xóa tìm kiếm"' + (f.q ? '' : ' hidden') + '>' + ic('x') + '</button></div>' +
       '<div class="seg" role="group" aria-label="Trạng thái">' + seg + '</div></header>' +
       '<div class="wrap"><div class="toolbar">' +
@@ -491,7 +524,7 @@
     const chips = [];
     if (f.itemId && S.items[f.itemId]) chips.push(['itemId', ic('box') + esc(S.items[f.itemId].name)]);
     if (f.from || f.to) chips.push(['date', (f.from ? 'Từ ' + K.fmtDate(f.from) : '') + (f.to ? ' đến ' + K.fmtDate(f.to) : '')]);
-    return '<header class="hdr sticky compact"><div class="hdr-row"><h1>Lịch sử</h1><button class="hbtn" data-act="hist-filter" aria-label="Bộ lọc">' + ic('filter') + '</button></div></header>' +
+    return '<header class="hdr sticky compact">' + khoChip() + '<div class="hdr-row"><h1>Lịch sử</h1><button class="hbtn" data-act="hist-filter" aria-label="Bộ lọc">' + ic('filter') + '</button></div></header>' +
       '<div class="wrap"><div class="chips">' + HTYPES.map(([k, l]) => '<button class="chip' + (f.type === k ? ' on' : '') + '" data-act="htype" data-v="' + k + '">' + l + '</button>').join('') + '</div>' +
       '<div class="toolbar"><button class="chip' + (nf ? ' on' : '') + '" data-act="hist-filter">' + ic('filter') + 'Mặt hàng, thời gian' + (nf ? ' <b>' + nf + '</b>' : '') + '</button></div>' +
       (chips.length ? '<div class="chips">' + chips.map(([k, l]) => '<button class="chip on" data-act="hist-rm" data-k="' + k + '">' + l + ' ' + ic('x') + '</button>').join('') + '</div>' : '') +
@@ -502,20 +535,25 @@
   function settingsHTML() {
     const nItems = Object.keys(S.items).length;
     const last = S.meta.lastBackup ? new Date(S.meta.lastBackup) : null;
-    const row = (act, icn, t, s, extra) => '<button class="setting" data-act="' + act + '"' + (extra || '') + '><span class="act-ic t-chuyen">' + ic(icn) + '</span><div class="mid"><div class="t">' + t + '</div>' + (s ? '<div class="s">' + s + '</div>' : '') + '</div>' + ic('chev', 'chev') + '</button>';
-    return '<header class="hdr sticky compact"><div class="hdr-row"><h1>Cài đặt</h1></div></header><div class="wrap">' +
-      '<section class="sec"><h2>Danh mục</h2><div class="card">' +
+    const row = (act, icn, t, s, extra) => '<button class="setting" data-act="' + act + '"' + (extra || '') + '><span class="act-ic">' + ic(icn) + '</span><div class="mid"><div class="t">' + t + '</div>' + (s ? '<div class="s">' + s + '</div>' : '') + '</div>' + ic('chev', 'chev') + '</button>';
+    return '<header class="hdr sticky compact">' + khoChip() + '<div class="hdr-row"><h1>Cài đặt</h1></div></header><div class="wrap">' +
+      themeSectionHTML() +
+      '<section class="sec"><h2>Các kho <span class="cnt">' + KHOS.length + ' kho trên máy này</span></h2><div class="card">' +
+      '<button class="setting" data-act="kho-switch">' + khoAv(ACTIVE) + '<div class="mid"><div class="t">' + esc(ACTIVE.name) + '</div><div class="s">Đang mở · chạm để chọn kho khác</div></div>' + ic('chev', 'chev') + '</button>' +
+      row('kho-new', 'plus', 'Tạo kho mới', 'Kho riêng cho từng người, dữ liệu tách biệt') +
+      row('kho-manage', 'users', 'Đổi tên hoặc xóa kho', KHOS.map(k => k.name).join(' · ')) + '</div></section>' +
+      '<section class="sec"><h2>Danh mục của kho này</h2><div class="card">' +
       row('mg-cat', 'tag', 'Loại hàng', Object.keys(S.categories).length + ' loại') +
       row('mg-unit', 'unit', 'Đơn vị tính', Object.keys(S.units).length + ' đơn vị') +
       row('mg-loc', 'pin', 'Vị trí cất', (Object.keys(S.locations).length - 1) + ' vị trí · Kho → Kệ → Tầng → Hộp') + '</div></section>' +
       '<section class="sec"><h2>Dữ liệu</h2><div class="card">' +
       row('backup', 'save', 'Sao lưu', last ? 'Gần nhất: ' + last.toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' }) : 'Chưa sao lưu lần nào') +
-      row('restore', 'restore', 'Khôi phục từ tệp sao lưu', 'Thay thế dữ liệu hiện có') +
+      row('restore', 'restore', 'Khôi phục từ tệp sao lưu', 'Tạo kho mới từ tệp, hoặc thay thế kho đang mở') +
       row('export', 'table', 'Xuất Excel / CSV', 'Danh sách tồn kho và lịch sử') + '</div></section>' +
       '<section class="sec"><h2>Trợ giúp</h2><div class="card">' +
       row('guide', 'book', 'Hướng dẫn sử dụng', 'Nhập, xuất, cho mượn, sao lưu') +
       row('storage', 'disk', 'Bộ nhớ trên máy', 'Dung lượng và độ bền dữ liệu') + '</div></section>' +
-      '<section class="sec"><h2>Nâng cao</h2><div class="card"><button class="setting" data-act="wipe"><span class="act-ic" style="background:var(--danger-soft);color:var(--danger)">' + ic('trash') + '</span><div class="mid"><div class="t" style="color:var(--danger)">Xóa toàn bộ dữ liệu</div><div class="s">' + nItems + ' mặt hàng, ' + S.movements.length + ' hoạt động</div></div></button></div></section>' +
+      '<section class="sec"><h2>Nâng cao</h2><div class="card"><button class="setting" data-act="wipe"><span class="act-ic" style="background:var(--danger-soft);color:var(--danger)">' + ic('trash') + '</span><div class="mid"><div class="t" style="color:var(--danger)">Xóa toàn bộ dữ liệu của kho này</div><div class="s">“' + esc(ACTIVE.name) + '”: ' + nItems + ' mặt hàng, ' + S.movements.length + ' hoạt động. Các kho khác giữ nguyên.</div></div></button></div></section>' +
       '<p class="hint foot-note">Kho Của Tôi · phiên bản ' + APP_VERSION + ' · dữ liệu lưu trên thiết bị này</p></div>';
   }
 
@@ -550,6 +588,7 @@
     const v = $('#view');
     v.addEventListener('click', e => {
       const t = e.target.closest('[data-tab]'); if (t) return go(t.dataset.tab);
+      const tm = e.target.closest('[data-theme-mode]'); if (tm) { applyTheme(tm.dataset.themeMode, true); return refresh(); }
       const a = e.target.closest('[data-act]'); if (!a) return;
       const id = a.dataset.id;
       switch (a.dataset.act) {
@@ -590,6 +629,9 @@
         case 'guide': return sheetGuide();
         case 'storage': return sheetStorage();
         case 'wipe': return wipeAll();
+        case 'kho-switch': return sheetKhos();
+        case 'kho-new': return sheetKhoForm(null);
+        case 'kho-manage': return sheetManageKhos();
       }
     });
     v.addEventListener('input', e => {
@@ -1263,6 +1305,161 @@
   }
 
   /* ================= SAO LƯU / KHÔI PHỤC / XUẤT ================= */
+  /* ================= NHIỀU KHO ================= */
+  const KHO_COLORS = 6;
+  function slugName(n) { return K.norm(n).replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 30) || 'kho'; }
+  function uniqueKhoName(name, exceptId) {
+    let n = name.trim(), k = 2;
+    const used = new Set(KHOS.filter(x => x.id !== exceptId).map(x => K.norm(x.name)));
+    while (used.has(K.norm(n))) n = name.trim() + ' (' + (k++) + ')';
+    return n;
+  }
+  function resetViewState() {
+    ui.detail = null; ui.homeQ = '';
+    Object.assign(ui.items, { q: '', status: 'con', categoryId: '', locPrefix: '', from: '', to: '' });
+    ui.hist = { type: 'all', itemId: '', from: '', to: '' }; ui.histLimit = 120;
+  }
+  async function openKhoData(k) {
+    await DB.use(k.db);
+    const r = await DB.loadAll();
+    let st = r.state;
+    if (r.empty) { st = K.seedDefaults(K.emptyState()); await DB.replaceAll(st, {}); }
+    if (!st.locations[K.NONE_LOC]) st.locations[K.NONE_LOC] = { id: K.NONE_LOC, kho: '', ke: '', tang: '', hop: '', system: true };
+    return st;
+  }
+  async function switchKho(id, quiet) {
+    const k = KHOS.find(x => x.id === id);
+    if (!k) return;
+    if (ACTIVE && k.id === ACTIVE.id) { closeAllSheets(); return; }
+    let st;
+    try { st = await openKhoData(k); }
+    catch (e) { toast('Không mở được kho “' + k.name + '”: ' + (e.message || e), 'err'); if (ACTIVE) await DB.use(ACTIVE.db); return; }
+    S = st; D = K.derive(S); ACTIVE = k;
+    try { await DB.setSetting('activeKho', k.id); } catch (e) { }
+    saveKhoStats();
+    closeAllSheets(); resetViewState(); ui.tab = ui.tab === 'settings' ? 'settings' : 'home'; render();
+    if (!quiet) toast('Đang mở ' + k.name);
+  }
+  function sheetKhos() {
+    const sh = openSheet({ title: 'Chọn kho', foot: false });
+    const draw = () => {
+      sh.body.innerHTML = '<div class="card opt-list">' + KHOS.map(k => '<button type="button" class="loc-opt' + (k.id === ACTIVE.id ? ' on' : '') + '" data-kho="' + k.id + '">' + khoAv(k, 'lg') + '<span class="p"><b style="font-weight:650">' + esc(k.name) + '</b><small>' + esc(khoStatsText(k)) + '</small></span>' + (k.id === ACTIVE.id ? ic('check', 'ck') : '') + '</button>').join('') + '</div>' +
+        '<button class="btn sec" data-act="kho-new">' + ic('plus') + 'Tạo kho mới</button>' +
+        '<button class="link" data-act="kho-manage" style="align-self:center">Đổi tên hoặc xóa kho</button>' +
+        '<p class="hint" style="margin:0;text-align:center">Mỗi kho có mặt hàng, ảnh, vị trí và lịch sử riêng, không lẫn với kho khác.</p>';
+    };
+    draw();
+    sh.body.addEventListener('click', e => {
+      const b = e.target.closest('[data-kho]'); if (b) return switchKho(b.dataset.kho);
+      if (e.target.closest('[data-act="kho-new"]')) return sheetKhoForm(null);
+      if (e.target.closest('[data-act="kho-manage"]')) { sh.close(); return sheetManageKhos(); }
+    });
+  }
+  function sheetKhoForm(k) {
+    const isNew = !k;
+    const sh = openSheet({ title: isNew ? 'Tạo kho mới' : 'Sửa kho', kho: false });
+    const f = { name: k ? k.name : '', color: k ? (k.color || 0) : (KHOS.length % KHO_COLORS), copyLists: true, copyLocs: false };
+    const draw = () => {
+      sh.body.innerHTML = '<div class="field"><label for="kf-name">Tên kho</label><input class="inp" id="kf-name" value="' + esc(f.name) + '" placeholder="Ví dụ: Kho của An" autocomplete="off" autocapitalize="sentences" maxlength="60"></div>' +
+        '<div class="field"><span class="flabel">Màu nhận diện</span><div class="colors" role="radiogroup" aria-label="Màu nhận diện">' +
+        Array.from({ length: KHO_COLORS }, (_, c) => '<button type="button" role="radio" aria-checked="' + (f.color === c) + '" aria-label="Màu ' + (c + 1) + '" class="' + (f.color === c ? 'on' : '') + '" data-color="' + c + '"><span class="kho-av tint' + c + '">' + esc(khoInitial({ name: f.name || 'K' })) + '</span></button>').join('') + '</div></div>' +
+        (isNew ? '<button type="button" class="check-row' + (f.copyLists ? ' on' : '') + '" data-tog="copyLists"><span class="bx">' + (f.copyLists ? ic('check') : '') + '</span><span>Dùng lại loại hàng và đơn vị tính<small>Lấy từ “' + esc(ACTIVE.name) + '”. Nếu bỏ chọn, kho mới dùng danh sách mặc định.</small></span></button>' +
+          '<button type="button" class="check-row' + (f.copyLocs ? ' on' : '') + '" data-tog="copyLocs"><span class="bx">' + (f.copyLocs ? ic('check') : '') + '</span><span>Dùng lại danh sách vị trí cất<small>Chọn nếu các kho cất chung một chỗ (cùng kệ, cùng hộp).</small></span></button>' +
+          '<p class="hint" style="margin:0">Kho mới bắt đầu trống: không có mặt hàng, ảnh hay lịch sử của kho khác.</p>' : '');
+      sh.foot.innerHTML = '<div class="ferr" hidden></div><button class="btn pri" data-act="kf-save">' + ic(isNew ? 'plus' : 'check') + (isNew ? 'Tạo kho' : 'Lưu') + '</button>';
+    };
+    draw();
+    sh.body.addEventListener('input', e => { if (e.target.id === 'kf-name') { f.name = e.target.value; $$('[data-color] .kho-av', sh.body).forEach(a => a.textContent = khoInitial({ name: f.name || 'K' })); } });
+    sh.body.addEventListener('click', e => {
+      const c = e.target.closest('[data-color]'); if (c) { f.color = Number(c.dataset.color); draw(); return; }
+      const t = e.target.closest('[data-tog]'); if (t) { f[t.dataset.tog] = !f[t.dataset.tog]; draw(); }
+    });
+    sh.foot.addEventListener('click', async e => {
+      if (!e.target.closest('[data-act="kf-save"]')) return;
+      const name = f.name.trim();
+      if (!name) { sh.err('Hãy đặt tên cho kho.'); const i = $('#kf-name', sh.body); if (i) i.classList.add('err'); return; }
+      if (KHOS.some(x => (!k || x.id !== k.id) && K.norm(x.name) === K.norm(name))) return sh.err('Đã có kho tên “' + name + '”. Hãy chọn tên khác.');
+      if (!isNew) {
+        const upd = Object.assign({}, k, { name, color: f.color });
+        if (await safe(() => DB.putKho(upd)) === false) return;
+        Object.assign(k, upd); if (ACTIVE && ACTIVE.id === k.id) ACTIVE = k;
+        closeAllSheets(); refresh(); toast('Đã lưu kho “' + name + '”'); return;
+      }
+      const id = K.uid('kho');
+      const st = K.seedDefaults(K.emptyState());
+      if (f.copyLists) {
+        st.categories = JSON.parse(JSON.stringify(S.categories));
+        st.units = JSON.parse(JSON.stringify(S.units));
+      }
+      if (f.copyLocs) for (const l of Object.values(S.locations)) st.locations[l.id] = Object.assign({}, l);
+      const rec = { id, name, color: f.color, db: 'kho-cua-toi--' + id, createdAt: new Date().toISOString(), order: Date.now(), stats: { inStock: 0, outStock: 0 } };
+      const ok = await safe(async () => { await DB.writeTo(rec.db, st, {}); await DB.putKho(rec); });
+      if (ok === false) return;
+      KHOS.push(rec);
+      await switchKho(id, true);
+      toast('Đã tạo “' + name + '”. Bạn đang ở kho mới.');
+    });
+  }
+  function sheetManageKhos() {
+    const sh = openSheet({ title: 'Các kho trên máy', foot: false, full: true, kho: false });
+    const draw = () => {
+      sh.body.innerHTML = '<button class="btn sec" data-act="kho-new">' + ic('plus') + 'Tạo kho mới</button><div class="card">' + KHOS.map(k =>
+        '<div class="mg-row">' + khoAv(k) + '<div class="p" style="padding-left:6px">' + esc(k.name) + (k.id === ACTIVE.id ? ' <span class="badge b-con" style="margin-left:4px">Đang mở</span>' : '') + '<small>' + esc(khoStatsText(k)) + '</small></div>' +
+        '<button data-kedit="' + k.id + '" aria-label="Sửa tên kho ' + esc(k.name) + '">' + ic('edit') + '</button>' +
+        '<button class="del" data-kdel="' + k.id + '" aria-label="Xóa kho ' + esc(k.name) + '"' + (KHOS.length < 2 ? ' disabled' : '') + '>' + ic('trash') + '</button></div>').join('') + '</div>' +
+        '<p class="hint" style="margin:0">' + (KHOS.length < 2 ? 'Phải có ít nhất một kho. Muốn làm trống kho này, dùng “Xóa toàn bộ dữ liệu của kho” trong Cài đặt.' : 'Xóa kho sẽ xóa vĩnh viễn mặt hàng, ảnh và lịch sử của kho đó trên máy này. Nên sao lưu trước khi xóa.') + '</p>';
+    };
+    draw();
+    sh.body.addEventListener('click', async e => {
+      if (e.target.closest('[data-act="kho-new"]')) return sheetKhoForm(null);
+      const ed = e.target.closest('[data-kedit]'); if (ed) return sheetKhoForm(KHOS.find(x => x.id === ed.dataset.kedit));
+      const dl = e.target.closest('[data-kdel]');
+      if (dl && !dl.disabled) { await deleteKho(dl.dataset.kdel); if (sh.el.isConnected) draw(); }
+    });
+  }
+  async function deleteKho(id) {
+    const k = KHOS.find(x => x.id === id); if (!k || KHOS.length < 2) return;
+    const v = await promptBox({
+      title: 'Xóa kho “' + k.name + '”?', danger: true, ok: 'Xóa vĩnh viễn', value: '', placeholder: 'XOA',
+      msg: 'Toàn bộ mặt hàng, ảnh, vị trí và lịch sử của kho này (' + khoStatsText(k) + ') sẽ bị xóa khỏi máy và không lấy lại được, trừ khi bạn có tệp sao lưu.\nCác kho khác không bị ảnh hưởng. Gõ XOA để xác nhận.',
+      validate: x => K.norm(x) === 'xoa' ? null : 'Hãy gõ đúng XOA.'
+    });
+    if (!v) return;
+    const ok = await safe(async () => {
+      if (ACTIVE.id === k.id) { const other = KHOS.find(x => x.id !== k.id); await switchKho(other.id, true); }
+      await DB.dropDb(k.db);
+      await DB.removeKho(k.id);
+    });
+    if (ok === false) return;
+    KHOS = KHOS.filter(x => x.id !== k.id);
+    refresh(); toast('Đã xóa kho “' + k.name + '”');
+  }
+
+  /* ================= GIAO DIỆN SÁNG / TỐI ================= */
+  let themeMode = 'dark';
+  const mqLight = window.matchMedia ? matchMedia('(prefers-color-scheme: light)') : null;
+  function effectiveTheme(m) { return m === 'system' ? (mqLight && mqLight.matches ? 'light' : 'dark') : m; }
+  function applyTheme(m, save) {
+    themeMode = m === 'light' || m === 'system' ? m : 'dark';
+    const t = effectiveTheme(themeMode);
+    document.documentElement.setAttribute('data-theme', t);
+    const meta = document.querySelector('meta[name="theme-color"]'); if (meta) meta.setAttribute('content', t === 'light' ? '#F5F2EC' : '#17191D');
+    if (save) { lsSet('themeMode', themeMode); DB.setSetting('themeMode', themeMode).catch(() => { }); }
+  }
+  if (mqLight && mqLight.addEventListener) mqLight.addEventListener('change', () => { if (themeMode === 'system') applyTheme('system', false); });
+  function themeSectionHTML() {
+    const opt = (id, label, icn, pv) => '<button type="button" role="radio" aria-checked="' + (themeMode === id) + '" class="theme-opt' + (themeMode === id ? ' on' : '') + '" data-theme-mode="' + id + '"><span class="pv" aria-hidden="true">' + pv + '</span><span class="lb">' + ic(icn) + '<span class="t">' + label + '</span>' + (themeMode === id ? '<span class="ok">' + ic('check') + '</span>' : '') + '</span></button>';
+    const pv = (bg, card, ink, split) => '<span style="inset:0;background:' + bg + '"></span>' + (split ? '<span style="left:0;top:0;bottom:0;width:50%;background:' + split + '"></span>' : '') +
+      '<span style="left:10px;top:11px;width:40px;height:6px;border-radius:3px;background:' + ink + '"></span><span style="left:10px;right:10px;top:24px;height:17px;border-radius:6px;background:' + card + '"></span>' +
+      '<span style="left:10px;top:48px;width:24px;height:13px;border-radius:5px;background:#D7BC86"></span><span style="left:40px;top:48px;width:24px;height:13px;border-radius:5px;background:' + card + '"></span>';
+    return '<section class="sec"><h2>Giao diện</h2><div class="theme-grid" role="radiogroup" aria-label="Chọn giao diện">' +
+      opt('dark', 'Tối', 'moon', pv('#17191D', '#2C2F35', '#F3EFE7')) +
+      opt('light', 'Sáng', 'sun', pv('#F5F2EC', '#FFFFFF', '#C9C2B6')) +
+      opt('system', 'Theo iPhone', 'phone', pv('#17191D', '#8E8A83', '#8E8A83', '#F5F2EC')) + '</div>' +
+      '<p class="hint" style="margin:8px 2px 0">' + (themeMode === 'system' ? 'Tự đổi theo chế độ Sáng/Tối của iPhone (Cài đặt › Màn hình & Độ sáng).' : themeMode === 'light' ? 'Nền sáng, dễ đọc ngoài trời hoặc nơi nhiều ánh sáng.' : 'Nền tối, dịu mắt khi dùng trong kho hoặc buổi tối.') + ' Áp dụng cho mọi kho trên máy này.</p></section>';
+  }
+
+  /* ================= SAO LƯU / KHÔI PHỤC / XUẤT ================= */
   function stamp() { const d = new Date(), p = n => String(n).padStart(2, '0'); return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + '_' + p(d.getHours()) + p(d.getMinutes()); }
   function fmtBytes(n) { return n > 1048576 ? (n / 1048576).toLocaleString('vi-VN', { maximumFractionDigits: 1 }) + ' MB' : Math.max(1, Math.round(n / 1024)) + ' KB'; }
   async function deliverFile(file) {
@@ -1279,57 +1476,115 @@
   }
   function sheetBackup() {
     const sh = openSheet({ title: 'Sao lưu dữ liệu' });
-    let file = null;
-    sh.body.innerHTML = '<div class="prose"><p>Tệp sao lưu chứa <b>toàn bộ</b> mặt hàng, ảnh, loại hàng, đơn vị, vị trí và lịch sử. Hãy lưu vào ứng dụng <b>Tệp</b> (chọn iCloud Drive nếu muốn có bản trên mây).</p></div><div id="bk-info" class="preview"><span class="k">Đang chuẩn bị tệp…</span><span></span></div>' +
-      '<div class="prose"><h4>Cách lưu trên iPhone</h4><ol><li>Nhấn “Lưu tệp sao lưu”.</li><li>Trong bảng chia sẻ, chọn <b>Lưu vào Tệp</b>.</li><li>Chọn thư mục, ví dụ iCloud Drive → Kho Của Tôi, rồi nhấn Lưu.</li></ol></div>';
-    sh.foot.innerHTML = '<div class="ferr" hidden></div><button class="btn pri" data-act="bk-go" disabled>' + ic('save') + 'Lưu tệp sao lưu</button>';
-    (async () => {
+    const f = { scope: 'one', file: null, token: 0 };
+    const many = KHOS.length > 1;
+    const draw = () => {
+      sh.body.innerHTML = (many ? '<div class="field"><span class="flabel">Sao lưu</span><div class="seg" role="radiogroup" aria-label="Phạm vi sao lưu" style="grid-template-columns:repeat(2,minmax(0,1fr));margin-top:0"><button type="button" class="' + (f.scope === 'one' ? 'on' : '') + '" data-scope="one">Kho đang mở</button><button type="button" class="' + (f.scope === 'all' ? 'on' : '') + '" data-scope="all">Tất cả ' + KHOS.length + ' kho</button></div></div>' : '') +
+        '<div class="prose"><p>' + (f.scope === 'all' ? 'Một tệp chứa <b>tất cả các kho</b> trên máy' : 'Tệp chứa <b>toàn bộ</b> kho “' + esc(ACTIVE.name) + '”') + ': mặt hàng, ảnh, loại hàng, đơn vị, vị trí và lịch sử. Hãy lưu vào ứng dụng <b>Tệp</b> (chọn iCloud Drive nếu muốn có bản trên mây).</p></div><div id="bk-info" class="preview"><span class="k">Đang chuẩn bị tệp…</span><span></span></div>' +
+        '<div class="prose"><h4>Cách lưu trên iPhone</h4><ol><li>Nhấn “Lưu tệp sao lưu”.</li><li>Trong bảng chia sẻ, chọn <b>Lưu vào Tệp</b>.</li><li>Chọn thư mục, ví dụ iCloud Drive → Kho Của Tôi, rồi nhấn Lưu.</li></ol></div>';
+      sh.foot.innerHTML = '<div class="ferr" hidden></div><button class="btn pri" data-act="bk-go" disabled>' + ic('save') + 'Lưu tệp sao lưu</button>';
+      prepare();
+    };
+    const prepare = async () => {
+      const my = ++f.token; f.file = null;
       try {
-        const photos = await DB.allPhotos();
-        const json = JSON.stringify(K.makeBackup(S, photos));
-        file = new File([json], 'KhoCuaToi_saoluu_' + stamp() + '.json', { type: 'application/json' });
-        $('#bk-info', sh.body).innerHTML = '<span class="k">Mặt hàng</span><span class="v num">' + Object.keys(S.items).length + '</span><span class="k">Ảnh</span><span class="v num">' + Object.keys(photos).length + '</span><span class="k">Dòng lịch sử</span><span class="v num">' + S.movements.length + '</span><span class="k">Dung lượng tệp</span><span class="v num">' + fmtBytes(file.size) + '</span>';
+        let json, info;
+        if (f.scope === 'all') {
+          const list = [];
+          for (const k of KHOS) { const r = await DB.loadFrom(k.db); list.push({ kho: k, state: r.state, photos: r.photos }); }
+          json = JSON.stringify(K.makeBundle(list));
+          const sum = (fn) => list.reduce((a, x) => a + fn(x), 0);
+          info = '<span class="k">Số kho</span><span class="v num">' + list.length + '</span><span class="k">Mặt hàng</span><span class="v num">' + sum(x => Object.keys(x.state.items).length) + '</span><span class="k">Ảnh</span><span class="v num">' + sum(x => Object.keys(x.photos).length) + '</span><span class="k">Dòng lịch sử</span><span class="v num">' + sum(x => x.state.movements.length) + '</span>';
+          if (my !== f.token) return;
+          f.file = new File([json], 'KhoCuaToi_tat-ca-kho_saoluu_' + stamp() + '.json', { type: 'application/json' });
+        } else {
+          const photos = await DB.allPhotos();
+          json = JSON.stringify(K.makeBackup(S, photos, ACTIVE));
+          info = '<span class="k">Kho</span><span class="v">' + esc(ACTIVE.name) + '</span><span class="k">Mặt hàng</span><span class="v num">' + Object.keys(S.items).length + '</span><span class="k">Ảnh</span><span class="v num">' + Object.keys(photos).length + '</span><span class="k">Dòng lịch sử</span><span class="v num">' + S.movements.length + '</span>';
+          if (my !== f.token) return;
+          f.file = new File([json], 'KhoCuaToi_' + slugName(ACTIVE.name) + '_saoluu_' + stamp() + '.json', { type: 'application/json' });
+        }
+        $('#bk-info', sh.body).innerHTML = info + '<span class="k">Dung lượng tệp</span><span class="v num">' + fmtBytes(f.file.size) + '</span>';
         $('[data-act="bk-go"]', sh.foot).disabled = false;
       } catch (e) { sh.err('Không tạo được tệp sao lưu: ' + e.message); }
-    })();
+    };
+    draw();
+    sh.body.addEventListener('click', e => { const b = e.target.closest('[data-scope]'); if (b && b.dataset.scope !== f.scope) { f.scope = b.dataset.scope; draw(); } });
     sh.foot.addEventListener('click', async e => {
-      if (!e.target.closest('[data-act="bk-go"]') || !file) return;
-      const r = await deliverFile(file);
+      if (!e.target.closest('[data-act="bk-go"]') || !f.file) return;
+      const r = await deliverFile(f.file);
       if (r === 'cancel') return;
-      await safe(() => commit({ meta: { lastBackup: new Date().toISOString() } }));
+      const now = new Date().toISOString();
+      await safe(() => commit({ meta: { lastBackup: now } }));
+      if (f.scope === 'all') for (const k of KHOS) if (k.id !== ACTIVE.id) { try { await DB.patchMeta(k.db, { lastBackup: now }); } catch (er) { } }
       sh.close(); refresh();
       toast(r === 'shared' ? 'Đã tạo tệp sao lưu. Hãy chắc chắn bạn đã chọn “Lưu vào Tệp”.' : 'Đã tải tệp sao lưu xuống.');
     });
+  }
+  async function createKhoFrom(r, fallbackName) {
+    const name = uniqueKhoName((r.kho && r.kho.name) || fallbackName || 'Kho khôi phục');
+    const id = K.uid('kho');
+    const rec = { id, name, color: r.kho ? r.kho.color % KHO_COLORS : (KHOS.length % KHO_COLORS), db: 'kho-cua-toi--' + id, createdAt: new Date().toISOString(), order: Date.now() };
+    const D2 = K.derive(r.state), sm = K.summary(r.state, D2);
+    rec.stats = { inStock: sm.inStock, outStock: sm.outStock, updatedAt: rec.createdAt };
+    await DB.writeTo(rec.db, r.state, r.photos);
+    await DB.putKho(rec);
+    KHOS.push(rec);
+    return rec;
   }
   async function startRestore() {
     const file = await pickFile('f-restore');
     if (!file) return;
     let text;
     try { text = await file.text(); } catch (e) { return toast('Không đọc được tệp.', 'err'); }
-    const r = K.readBackup(text);
-    if (!r.ok) return dialog({ title: 'Không thể khôi phục', msg: r.error + '\nDữ liệu hiện tại vẫn được giữ nguyên.', ok: 'Đã hiểu', cancel: false });
-    const when = r.exportedAt ? new Date(r.exportedAt).toLocaleString('vi-VN') : 'không rõ';
+    const rr = K.readAny(text);
+    if (!rr.ok) return dialog({ title: 'Không thể khôi phục', msg: rr.error + '\nDữ liệu hiện tại vẫn được giữ nguyên.', ok: 'Đã hiểu', cancel: false });
+    const when = rr.exportedAt ? new Date(rr.exportedAt).toLocaleString('vi-VN') : 'không rõ';
+    if (rr.bundle) {
+      const names = rr.list.map(x => '• ' + ((x.kho && x.kho.name) || 'Kho không tên') + ': ' + x.counts.items + ' mặt hàng, ' + x.counts.movements + ' dòng lịch sử').join('\n');
+      const ans = await confirmBox({ title: 'Thêm ' + rr.list.length + ' kho từ tệp?', ok: 'Thêm vào máy', msg: 'Tệp hợp lệ, tạo lúc ' + when + ':\n' + names + '\n\nCác kho này được THÊM thành kho mới. Kho đang có trên máy giữ nguyên; tên trùng sẽ được thêm số (2), (3)…' });
+      if (ans !== 'ok') return;
+      let first = null;
+      const ok = await safe(async () => { for (const x of rr.list) { const rec = await createKhoFrom(x); if (!first) first = rec; } });
+      if (ok === false) return;
+      await switchKho(first.id, true);
+      toast('Đã thêm ' + rr.list.length + ' kho từ tệp sao lưu');
+      return;
+    }
+    const r = rr.list[0];
+    const src = (r.kho && r.kho.name) ? '“' + r.kho.name + '”' : 'trong tệp';
     const ans = await confirmBox({
-      title: 'Thay thế toàn bộ dữ liệu?', danger: true, ok: 'Thay thế bằng bản sao lưu',
-      msg: 'Tệp hợp lệ, tạo lúc ' + when + ':\n• ' + r.counts.items + ' mặt hàng, ' + r.counts.photos + ' ảnh, ' + r.counts.movements + ' dòng lịch sử.\n\nDữ liệu đang có trên máy (' + Object.keys(S.items).length + ' mặt hàng, ' + S.movements.length + ' dòng lịch sử) sẽ bị XÓA và thay bằng nội dung trong tệp. Nếu chưa chắc, hãy hủy và sao lưu dữ liệu hiện tại trước.'
+      title: 'Khôi phục kho ' + src + '?', ok: 'Tạo kho mới từ tệp', extra: 'Thay thế kho đang mở',
+      msg: 'Tệp hợp lệ, tạo lúc ' + when + ':\n• ' + r.counts.items + ' mặt hàng, ' + r.counts.photos + ' ảnh, ' + r.counts.movements + ' dòng lịch sử.\n\n“Tạo kho mới” giữ nguyên mọi kho đang có.\n“Thay thế” sẽ XÓA dữ liệu của “' + ACTIVE.name + '” (' + Object.keys(S.items).length + ' mặt hàng, ' + S.movements.length + ' dòng lịch sử).'
     });
-    if (ans !== 'ok') return;
+    if (ans === 'ok') {
+      let rec = null;
+      if (await safe(async () => { rec = await createKhoFrom(r); }) === false) return;
+      await switchKho(rec.id, true);
+      toast('Đã khôi phục thành kho mới “' + rec.name + '”');
+      return;
+    }
+    if (ans !== 'extra') return;
+    const sure = await confirmBox({ title: 'Thay thế toàn bộ dữ liệu?', danger: true, ok: 'Thay thế bằng bản sao lưu', msg: 'Dữ liệu đang có trong “' + ACTIVE.name + '” sẽ bị XÓA và thay bằng nội dung trong tệp. Nếu chưa chắc, hãy hủy và sao lưu kho này trước.' });
+    if (sure !== 'ok') return;
     if (await safe(async () => { await DB.replaceAll(r.state, r.photos); const l = await DB.loadAll(); S = l.state; D = K.derive(S); }) === false) return;
+    saveKhoStats();
     closeAllSheets(); ui.detail = null; render();
     toast('Đã khôi phục ' + r.counts.items + ' mặt hàng và ' + r.counts.movements + ' dòng lịch sử');
   }
   function sheetExport() {
     const sh = openSheet({ title: 'Xuất dữ liệu', foot: false });
-    sh.body.innerHTML = '<div class="prose"><p>Xuất danh sách để xem, in hoặc gửi đi. Tệp giữ đúng tiếng Việt. Đây không phải bản sao lưu (không có ảnh, không khôi phục lại được).</p></div><div class="card">' +
-      '<button class="setting" data-ex="xlsx"><span class="act-ic t-nhap">' + ic('table') + '</span><div class="mid"><div class="t">Excel (.xlsx)</div><div class="s">2 trang tính: Tồn kho và Lịch sử</div></div>' + ic('chev', 'chev') + '</button>' +
-      '<button class="setting" data-ex="csv-ton"><span class="act-ic t-chuyen">' + ic('table') + '</span><div class="mid"><div class="t">CSV · Tồn kho</div><div class="s">Mở được bằng Excel, Numbers, Google Sheets</div></div>' + ic('chev', 'chev') + '</button>' +
-      '<button class="setting" data-ex="csv-ls"><span class="act-ic t-chuyen">' + ic('clock') + '</span><div class="mid"><div class="t">CSV · Lịch sử</div><div class="s">Toàn bộ nhập, xuất, điều chỉnh</div></div>' + ic('chev', 'chev') + '</button></div>';
+    sh.body.innerHTML = '<div class="prose"><p>Xuất danh sách của kho “' + esc(ACTIVE.name) + '” để xem, in hoặc gửi đi. Tệp giữ đúng tiếng Việt. Đây không phải bản sao lưu (không có ảnh, không khôi phục lại được).</p></div><div class="card">' +
+      '<button class="setting" data-ex="xlsx"><span class="act-ic">' + ic('table') + '</span><div class="mid"><div class="t">Excel (.xlsx)</div><div class="s">2 trang tính: Tồn kho và Lịch sử</div></div>' + ic('chev', 'chev') + '</button>' +
+      '<button class="setting" data-ex="csv-ton"><span class="act-ic">' + ic('table') + '</span><div class="mid"><div class="t">CSV · Tồn kho</div><div class="s">Mở được bằng Excel, Numbers, Google Sheets</div></div>' + ic('chev', 'chev') + '</button>' +
+      '<button class="setting" data-ex="csv-ls"><span class="act-ic">' + ic('clock') + '</span><div class="mid"><div class="t">CSV · Lịch sử</div><div class="s">Toàn bộ nhập, xuất, điều chỉnh</div></div>' + ic('chev', 'chev') + '</button></div>';
     sh.body.addEventListener('click', async e => {
       const b = e.target.closest('[data-ex]'); if (!b) return;
+      const base = 'KhoCuaToi_' + slugName(ACTIVE.name);
       let file;
-      if (b.dataset.ex === 'xlsx') file = new File([KhoXLSX.build([{ name: 'Tồn kho', rows: K.stockRows(S, D) }, { name: 'Lịch sử', rows: K.historyRows(S, D) }])], 'KhoCuaToi_' + stamp() + '.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-      else if (b.dataset.ex === 'csv-ton') file = new File([K.toCSV(K.stockRows(S, D))], 'KhoCuaToi_TonKho_' + stamp() + '.csv', { type: 'text/csv' });
-      else file = new File([K.toCSV(K.historyRows(S, D))], 'KhoCuaToi_LichSu_' + stamp() + '.csv', { type: 'text/csv' });
+      if (b.dataset.ex === 'xlsx') file = new File([KhoXLSX.build([{ name: 'Tồn kho', rows: K.stockRows(S, D) }, { name: 'Lịch sử', rows: K.historyRows(S, D) }])], base + '_' + stamp() + '.xlsx', { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      else if (b.dataset.ex === 'csv-ton') file = new File([K.toCSV(K.stockRows(S, D))], base + '_TonKho_' + stamp() + '.csv', { type: 'text/csv' });
+      else file = new File([K.toCSV(K.historyRows(S, D))], base + '_LichSu_' + stamp() + '.csv', { type: 'text/csv' });
       const r = await deliverFile(file);
       if (r !== 'cancel') toast('Đã tạo tệp ' + file.name);
     });
@@ -1353,25 +1608,37 @@
       '<h4>Chuyển vị trí và kiểm kê</h4><p><b>Chuyển vị trí</b> chỉ đổi chỗ cất trong kho, tổng không đổi. <b>Kiểm kê</b> để sửa số lượng theo thực tế: nhập số đếm được, ghi lý do, ứng dụng lưu số trước và sau. Số lượng không sửa trực tiếp được ở chỗ nào khác.</p>' +
       '<h4>Tìm kiếm</h4><p>Gõ tên, mã, ghi chú hoặc vị trí, có dấu hay không dấu đều được (“ke a” tìm ra “Kệ A”). Danh sách mặc định chỉ hiện hàng còn; chọn <b>Tất cả</b> để thấy cả hàng đã xuất hết.</p>' +
       '<h4>Giá trị ước tính được tính thế nào?</h4><p>Giá mỗi đơn vị = <b>bình quân gia quyền</b> giá của các đợt nhập có ghi giá. Giá trị = số lượng còn × giá bình quân. Đợt nhập không ghi giá không bị tính là 0 đồng. Mặt hàng chưa đợt nào có giá hiện “Chưa có giá” và không cộng vào tổng; Trang chủ ghi rõ còn bao nhiêu mặt hàng như vậy. Có thể bổ sung giá sau bằng cách mở dòng nhập trong lịch sử.</p>' +
-      '<h4>Sao lưu và khôi phục</h4><p>Cài đặt → <b>Sao lưu</b> → Lưu vào Tệp (iCloud Drive). Khi cần lấy lại, Cài đặt → <b>Khôi phục</b> → chọn tệp. Ứng dụng kiểm tra tệp trước và hỏi lại vì thao tác này thay thế dữ liệu hiện có.</p>' +
+      '<h4>Nhiều kho</h4><p>Mỗi người một kho riêng: chạm tên kho ở đầu màn hình → <b>Tạo kho mới</b>. Mặt hàng, ảnh, vị trí và lịch sử của mỗi kho tách biệt hoàn toàn. Chạm tên kho để chuyển qua lại; tên kho cũng hiện trên mọi biểu mẫu nhập, xuất để tránh ghi nhầm kho. Đổi tên hoặc xóa kho trong Cài đặt → Các kho.</p>' +
+      '<h4>Sao lưu và khôi phục</h4><p>Cài đặt → <b>Sao lưu</b> → Lưu vào Tệp (iCloud Drive). Có thể sao lưu kho đang mở hoặc tất cả các kho trong một tệp. Khi cần lấy lại, Cài đặt → <b>Khôi phục</b> → chọn tệp. Ứng dụng kiểm tra tệp trước; mặc định khôi phục thành kho mới, chỉ thay thế kho đang mở khi bạn chọn và xác nhận.</p>' +
       '</div>';
   }
   async function wipeAll() {
-    const v = await promptBox({ title: 'Xóa toàn bộ dữ liệu?', msg: 'Mọi mặt hàng, ảnh, vị trí và lịch sử trên máy này sẽ bị xóa. Gõ XOA để xác nhận.', value: '', placeholder: 'XOA', ok: 'Xóa toàn bộ', danger: true, validate: v => K.norm(v) === 'xoa' ? null : 'Hãy gõ đúng XOA.' });
+    const v = await promptBox({ title: 'Xóa dữ liệu của “' + ACTIVE.name + '”?', msg: 'Mọi mặt hàng, ảnh, vị trí và lịch sử của kho này sẽ bị xóa; kho vẫn còn nhưng trống. Các kho khác không bị ảnh hưởng. Gõ XOA để xác nhận.', value: '', placeholder: 'XOA', ok: 'Xóa toàn bộ', danger: true, validate: v => K.norm(v) === 'xoa' ? null : 'Hãy gõ đúng XOA.' });
     if (!v) return;
     const st = K.seedDefaults(K.emptyState());
     if (await safe(async () => { await DB.replaceAll(st, {}); S = st; D = K.derive(S); }) === false) return;
-    ui.detail = null; go('home'); toast('Đã xóa toàn bộ dữ liệu');
+    saveKhoStats();
+    ui.detail = null; go('home'); toast('Đã xóa toàn bộ dữ liệu của “' + ACTIVE.name + '”');
   }
 
   /* ================= khởi động ================= */
   async function boot() {
     try {
-      const r = await DB.loadAll();
-      S = r.state;
-      if (r.empty) { S = K.seedDefaults(K.emptyState()); await DB.replaceAll(S, {}); }
-      if (!S.locations[K.NONE_LOC]) S.locations[K.NONE_LOC] = { id: K.NONE_LOC, kho: '', ke: '', tang: '', hop: '', system: true };
+      // Giao diện sáng/tối
+      let mode = lsGet('themeMode');
+      if (!mode) { try { mode = await DB.getSetting('themeMode'); } catch (e) { } }
+      applyTheme(mode || 'dark', false);
+      // Danh sách kho: lần đầu sau khi cập nhật, dữ liệu cũ trở thành kho đầu tiên
+      KHOS = await DB.listKhos();
+      if (!KHOS.length) {
+        const main = { id: 'main', name: 'Kho của tôi', color: 0, db: DB.MAIN_DB, createdAt: new Date().toISOString(), order: 0 };
+        await DB.putKho(main); KHOS = [main];
+      }
+      let actId; try { actId = await DB.getSetting('activeKho'); } catch (e) { }
+      ACTIVE = KHOS.find(k => k.id === actId) || KHOS[0];
+      S = await openKhoData(ACTIVE);
       D = K.derive(S);
+      saveKhoStats();
       if (D.errors.length) console.warn('Dữ liệu có điểm bất thường', D.errors);
     } catch (e) {
       $('#view').innerHTML = '<div class="wrap" style="padding-top:calc(var(--sat) + 40px)"><div class="notice danger">' + ic('alert') + '<div><b>Không mở được bộ nhớ của ứng dụng.</b><br>' + esc(e.message || e) + '<br>Nếu đang dùng chế độ Duyệt web riêng tư, hãy mở bằng tab thường hoặc từ màn hình chính.</div></div></div>';
@@ -1392,6 +1659,6 @@
     }
     if (Object.keys(S.items).length) DB.persist();
   }
-  window.__kho = { get S() { return S; }, get D() { return D; } }; // phục vụ kiểm thử
+  window.__kho = { get S() { return S; }, get D() { return D; }, get KHOS() { return KHOS; }, get ACTIVE() { return ACTIVE; }, get theme() { return themeMode; } }; // phục vụ kiểm thử
   boot();
 })();

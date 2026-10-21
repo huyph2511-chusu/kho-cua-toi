@@ -456,9 +456,10 @@
   }
 
   /* ---------- sao lưu ---------- */
-  function makeBackup(state, photos) {
+  function makeBackup(state, photos, kho) {
     return {
       app: APP_ID, version: BACKUP_VERSION, exportedAt: new Date().toISOString(),
+      kho: kho ? { name: kho.name, color: kho.color || 0 } : undefined,
       counts: { items: Object.keys(state.items).length, movements: state.movements.length, photos: Object.keys(photos || {}).length },
       data: {
         meta: state.meta,
@@ -511,7 +512,29 @@
     }
     if (obj.counts && (obj.counts.items !== dt.items.length || obj.counts.movements !== dt.movements.length))
       return fail('Tệp sao lưu không đầy đủ (số bản ghi không khớp). Có thể tệp bị cắt khi lưu.');
-    return { ok: true, state: st, photos, counts: { items: dt.items.length, movements: dt.movements.length, photos: Object.keys(photos).length }, exportedAt: obj.exportedAt };
+    const kho = obj.kho && typeof obj.kho.name === 'string' && obj.kho.name.trim() ? { name: obj.kho.name.trim().slice(0, 60), color: Number(obj.kho.color) || 0 } : null;
+    return { ok: true, state: st, photos, kho, counts: { items: dt.items.length, movements: dt.movements.length, photos: Object.keys(photos).length }, exportedAt: obj.exportedAt };
+  }
+  /** Sao lưu nhiều kho trong một tệp */
+  function makeBundle(list) { // list: [{kho, state, photos}]
+    return { app: APP_ID, kind: 'tat-ca-kho', version: BACKUP_VERSION, exportedAt: new Date().toISOString(), khos: list.map(x => makeBackup(x.state, x.photos, x.kho)) };
+  }
+  /** Đọc tệp sao lưu một kho hoặc tất cả các kho. Trả về { ok, bundle, list:[readBackup…] } */
+  function readAny(text) {
+    let obj;
+    try { obj = typeof text === 'string' ? JSON.parse(text) : text; } catch (e) { return fail('Tệp không phải định dạng sao lưu (JSON hỏng).'); }
+    if (obj && obj.app === APP_ID && obj.kind === 'tat-ca-kho') {
+      if (!Array.isArray(obj.khos) || !obj.khos.length) return fail('Tệp sao lưu không có kho nào.');
+      const list = [];
+      for (let k = 0; k < obj.khos.length; k++) {
+        const r = readBackup(obj.khos[k]);
+        if (!r.ok) return fail('Kho thứ ' + (k + 1) + ' trong tệp bị lỗi: ' + r.error);
+        list.push(r);
+      }
+      return { ok: true, bundle: true, list, exportedAt: obj.exportedAt };
+    }
+    const r = readBackup(obj);
+    return r.ok ? { ok: true, bundle: false, list: [r], exportedAt: r.exportedAt } : r;
   }
 
   /* ---------- xuất bảng ---------- */
@@ -569,6 +592,6 @@
     norm, r6, uid, todayISO, parseQty, parsePrice, fmtQty, fmtMoney, fmtDate,
     emptyState, seedDefaults, locPath, findLocation, derive, statusOf, statusLabel, summary,
     ops, qtyAt, nextCode, validateItem, suggestItems, filterItems, filterHistory, itemLocIds,
-    locationPrefixes, describe, makeBackup, readBackup, stockRows, historyRows, toCSV
+    locationPrefixes, describe, makeBackup, readBackup, makeBundle, readAny, stockRows, historyRows, toCSV
   };
 });
